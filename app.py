@@ -19,6 +19,7 @@ import asyncio
 import json
 import os
 import random
+from typing import Dict
 
 from aiohttp import web
 import aiohttp_cors
@@ -334,7 +335,6 @@ async def on_shutdown(app):
     await asyncio.gather(*coros)
     pcs.clear()
 
-from typing import Dict
 from llm import llm_response
 from logger import logger
 
