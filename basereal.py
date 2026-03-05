@@ -51,7 +51,7 @@ def read_imgs(img_list):
     return frames
 
 # from https://github.com/Rudrabha/Wav2Lip
-import audio
+from wav2lip import audio
 mel_step_size = 16
 
 def _load(checkpoint_path):
