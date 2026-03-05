@@ -50,61 +50,48 @@ def read_imgs(img_list):
         frames.append(frame)
     return frames
 
-def play_audio(quit_event,queue):        
-    import pyaudio
-    p = pyaudio.PyAudio()
-    stream = p.open(
-        rate=16000,
-        channels=1,
-        format=8,
-        output=True,
-        output_device_index=1,
-    )
-    stream.start_stream()
-    # while queue.qsize() <= 0:
-    #     time.sleep(0.1)
-    while not quit_event.is_set():
-        stream.write(queue.get(block=True))
-    stream.close()
+# from https://github.com/Rudrabha/Wav2Lip
+import audio
+mel_step_size = 16
+
+def _load(checkpoint_path):
+    if torch.cuda.is_available():
+        checkpoint = torch.load(checkpoint_path)
+    else:
+        checkpoint = torch.load(checkpoint_path,
+                                map_location=lambda storage, loc: storage)
+    return checkpoint
+
+def load_model(model_path):
+    model = Wav2Lip()
+    logger.info("Loading checkpoint from: {}".format(model_path))
+    checkpoint = _load(model_path)
+    s = checkpoint["state_dict"]
+    new_s = {}
+    for k, v in s.items():
+        new_s[k.replace('module.', '')] = v
+    model.load_state_dict(new_s)
+
+    model = model.cuda()
+    return model.eval()
+
+def img2tensor(img,device):
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    img = torch.from_numpy(img)
+    img = torch.tensor(img,device=device).permute(2,0,1) # HWC->CHW
+    img = img.unsqueeze(0)  # 1CHW
+    return img
 
 class BaseReal:
     def __init__(self, opt):
         self.opt = opt
         self.sample_rate = 16000
-        self.chunk = self.sample_rate // opt.fps # 320 samples per chunk (20ms * 16000 / 1000)
-        self.sessionid = self.opt.sessionid
+        self.chunk = self.sample_rate // opt.fps  # 320 samples per chunk (20ms * 16000 / 1000)
 
-        if opt.tts == "edgetts":
-            self.tts = EdgeTTS(opt,self)
-        elif opt.tts == "gpt-sovits":
-            self.tts = SovitsTTS(opt,self)
-        elif opt.tts == "xtts":
-            self.tts = XTTS(opt,self)
-        elif opt.tts == "cosyvoice":
-            self.tts = CosyVoiceTTS(opt,self)
-        elif opt.tts == "fishtts":
-            self.tts = FishTTS(opt,self)
-        elif opt.tts == "tencent":
-            self.tts = TencentTTS(opt,self)
-        elif opt.tts == "doubao":
-            self.tts = DoubaoTTS(opt,self)
-        elif opt.tts == "indextts2":
-            self.tts = IndexTTS2(opt,self)
-        elif opt.tts == "azuretts":
-            self.tts = AzureTTS(opt,self)
-
-        self.speaking = False
-
-        self.recording = False
-        self._record_video_pipe = None
-        self._record_audio_pipe = None
-        self.width = self.height = 0
-
+        self.fps = opt.fps
         self.curr_state=0
-        self.custom_img_cycle = {}
-        self.custom_audio_cycle = {}
-        self.custom_audio_index = {}
-        self.custom_index = {}
+        self.custom_index=0
+        self.custom_index_cycle=None
         self.custom_opt = {}
         self.__loadcustom()
 
@@ -125,291 +112,159 @@ class BaseReal:
             streamlen -= self.chunk
             idx += self.chunk
     
+    def flush_talk(self):
+        self.tts.flush_talk()
+
+    def is_speaking(self)->bool:
+        return self.tts.is_speaking()
+    
     def __create_bytes_stream(self,byte_stream):
         #byte_stream=BytesIO(buffer)
         stream, sample_rate = sf.read(byte_stream) # [T*sample_rate,] float64
-        logger.info(f'[INFO]put audio stream {sample_rate}: {stream.shape}')
+        logger.info(f'create_bytes_stream sample rate {sample_rate}, shape {stream.shape}')
         stream = stream.astype(np.float32)
 
         if stream.ndim > 1:
-            logger.info(f'[WARN] audio has {stream.shape[1]} channels, only use the first.')
-            stream = stream[:, 0]
-    
+            logger.info(f'multichannel audio, only use first channel')
+            stream = stream[:, 0]  
+
         if sample_rate != self.sample_rate and stream.shape[0]>0:
-            logger.info(f'[WARN] audio sample rate is {sample_rate}, resampling into {self.sample_rate}.')
-            stream = resampy.resample(x=stream, sr_orig=sample_rate, sr_new=self.sample_rate)
+            logger.info(f'resample {sample_rate} to {self.sample_rate}')
+            stream = resampy.resample(x=stream, orig_sr=sample_rate, target_sr=self.sample_rate)
 
         return stream
 
-    def flush_talk(self):
-        self.tts.flush_talk()
-        self.asr.flush_talk()
-
-    def is_speaking(self)->bool:
-        return self.speaking
-    
     def __loadcustom(self):
         for item in self.opt.customopt:
-            logger.info(item)
-            input_img_list = glob.glob(os.path.join(item['imgpath'], '*.[jpJP][pnPN]*[gG]'))
-            input_img_list = sorted(input_img_list, key=lambda x: int(os.path.splitext(os.path.basename(x))[0]))
-            self.custom_img_cycle[item['audiotype']] = read_imgs(input_img_list)
-            self.custom_audio_cycle[item['audiotype']], sample_rate = sf.read(item['audiopath'], dtype='float32')
-            self.custom_audio_index[item['audiotype']] = 0
-            self.custom_index[item['audiotype']] = 0
-            self.custom_opt[item['audiotype']] = item
+            print(item)
+            opt_custom = load_custom(item['customvideo_img'],item['customvideo_imgnum'])
+            self.custom_opt[item['audiotype']]=opt_custom
+            if item['audiotype']=='start':
+                self.custom_index_cycle=list(range(item['customvideo_imgnum']))
+            logger.info(item['audiotype'])
 
-    def init_customindex(self):
-        self.curr_state=0
-        for key in self.custom_audio_index:
-            self.custom_audio_index[key]=0
-        for key in self.custom_index:
-            self.custom_index[key]=0
+    def set_custom_state(self,audiotype:str,reinit=False):
+        if audiotype=="normal":
+            self.curr_state=0
+        else:
+            self.curr_state=1
+            if reinit:
+                self.custom_index=-1
+            self.custom_index_cycle=self.custom_opt[audiotype]['custom_index_cycle']
 
     def notify(self,eventpoint):
-        logger.info("notify:%s",eventpoint)
+        pass
 
     def start_recording(self):
-        """开始录制视频"""
-        if self.recording:
-            return
-
-        # 检查尺寸是否已设置
-        if self.width == 0 or self.height == 0:
-            logger.warning("Video size not set, recording will start when first frame is received")
-            self.recording = True
-            return
-
-        # 尺寸已设置，正常启动录制
-        command = ['ffmpeg',
-                    '-y', '-an',
-                    '-f', 'rawvideo',
-                    '-vcodec','rawvideo',
-                    '-pix_fmt', 'bgr24', #像素格式
-                    '-s', "{}x{}".format(self.width, self.height),
-                    '-r', str(25),
-                    '-i', '-',
-                    '-pix_fmt', 'yuv420p', 
-                    '-vcodec', "h264",
-                    f'temp{self.opt.sessionid}.mp4']
-        self._record_video_pipe = subprocess.Popen(command, shell=False, stdin=subprocess.PIPE)
-
-        acommand = ['ffmpeg',
-                    '-y', '-vn',
-                    '-f', 's16le',
-                    '-ac', '1',
-                    '-ar', '16000',
-                    '-i', '-',
-                    '-acodec', 'aac',
-                    f'temp{self.opt.sessionid}.aac']
-        self._record_audio_pipe = subprocess.Popen(acommand, shell=False, stdin=subprocess.PIPE)
-
-        self.recording = True
-    
-    def record_video_data(self,image):
-        if self.width == 0:
-            print("image.shape:",image.shape)
-            self.height,self.width,_ = image.shape
-            # 如果录制已请求但尚未启动，现在启动
-            if self.recording and self._record_video_pipe is None:
-                self.start_recording()
-        if self.recording and self._record_video_pipe is not None:
-            self._record_video_pipe.stdin.write(image.tostring())
-
-    def record_audio_data(self,frame):
-        if self.recording:
-            self._record_audio_pipe.stdin.write(frame.tostring())
-    
-    # def record_frame(self): 
-    #     videostream = self.container.add_stream("libx264", rate=25)
-    #     videostream.codec_context.time_base = Fraction(1, 25)
-    #     audiostream = self.container.add_stream("aac")
-    #     audiostream.codec_context.time_base = Fraction(1, 16000)
-    #     init = True
-    #     framenum = 0       
-    #     while self.recording:
-    #         try:
-    #             videoframe = self.recordq_video.get(block=True, timeout=1)
-    #             videoframe.pts = framenum #int(round(framenum*0.04 / videostream.codec_context.time_base))
-    #             videoframe.dts = videoframe.pts
-    #             if init:
-    #                 videostream.width = videoframe.width
-    #                 videostream.height = videoframe.height
-    #                 init = False
-    #             for packet in videostream.encode(videoframe):
-    #                 self.container.mux(packet)
-    #             for k in range(2):
-    #                 audioframe = self.recordq_audio.get(block=True, timeout=1)
-    #                 audioframe.pts = int(round((framenum*2+k)*0.02 / audiostream.codec_context.time_base))
-    #                 audioframe.dts = audioframe.pts
-    #                 for packet in audiostream.encode(audioframe):
-    #                     self.container.mux(packet)
-    #             framenum += 1
-    #         except queue.Empty:
-    #             print('record queue empty,')
-    #             continue
-    #         except Exception as e:
-    #             print(e)
-    #             #break
-    #     for packet in videostream.encode(None):
-    #         self.container.mux(packet)
-    #     for packet in audiostream.encode(None):
-    #         self.container.mux(packet)
-    #     self.container.close()
-    #     self.recordq_video.queue.clear()
-    #     self.recordq_audio.queue.clear()
-    #     print('record thread stop')
-		
-    def stop_recording(self):
-        """停止录制视频"""
-        if not self.recording:
-            return
-        self.recording = False 
-        if self._record_video_pipe is not None:
-            self._record_video_pipe.stdin.close()  #wait() 
-            self._record_video_pipe.wait()
-        if self._record_audio_pipe is not None:
-            self._record_audio_pipe.stdin.close()
-            self._record_audio_pipe.wait()
-        # 检查文件是否存在，然后合并音频和视频
-        if os.path.exists(f"temp{self.opt.sessionid}.aac") and os.path.exists(f"temp{self.opt.sessionid}.mp4"):
-            cmd_combine_audio = f"ffmpeg -y -i temp{self.opt.sessionid}.aac -i temp{self.opt.sessionid}.mp4 -c:v copy -c:a copy data/record.mp4"
-            os.system(cmd_combine_audio) 
-        #os.remove(output_path)
-
-    def mirror_index(self,size, index):
-        #size = len(self.coord_list_cycle)
-        turn = index // size
-        res = index % size
-        if turn % 2 == 0:
-            return res
-        else:
-            return size - res - 1 
-    
-    def get_audio_stream(self,audiotype):
-        idx = self.custom_audio_index[audiotype]
-        stream = self.custom_audio_cycle[audiotype][idx:idx+self.chunk]
-        self.custom_audio_index[audiotype] += self.chunk
-        if self.custom_audio_index[audiotype]>=self.custom_audio_cycle[audiotype].shape[0]:
-            self.curr_state = 1  #当前视频不循环播放，切换到静音状态
-        return stream
-    
-    def set_custom_state(self,audiotype, reinit=True):
-        print('set_custom_state:',audiotype)
-        if self.custom_audio_index.get(audiotype) is None:
-            return
-        self.curr_state = audiotype
-        if reinit:
-            self.custom_audio_index[audiotype] = 0
-            self.custom_index[audiotype] = 0
-
-    def process_frames(self,quit_event,loop=None,audio_track=None,video_track=None):
-        enable_transition = False  # 设置为False禁用过渡效果，True启用
-        
-        if enable_transition:
-            _last_speaking = False
-            _transition_start = time.time()
-            _transition_duration = 0.1  # 过渡时间
-            _last_silent_frame = None  # 静音帧缓存
-            _last_speaking_frame = None  # 说话帧缓存
-        
-        if self.opt.transport=='virtualcam':
-            import pyvirtualcam
-            vircam = None
-
-            audio_tmp = queue.Queue(maxsize=3000)
-            audio_thread = Thread(target=play_audio, args=(quit_event,audio_tmp,), daemon=True, name="pyaudio_stream")
-            audio_thread.start()
-        
-        while not quit_event.is_set():
-            try:
-                res_frame,idx,audio_frames = self.res_frame_queue.get(block=True, timeout=1)
-            except queue.Empty:
-                continue
+        """开始录制视频和音频"""
+        try:
+            import datetime
+            # 生成文件名
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            self.record_video_file = f"record_{timestamp}.mp4"
+            self.record_audio_file = f"record_{timestamp}.wav"
+            logger.info(f"开始录制到文件: {self.record_video_file}")
             
-            if enable_transition:
-                # 检测状态变化
-                current_speaking = not (audio_frames[0][1]!=0 and audio_frames[1][1]!=0)
-                if current_speaking != _last_speaking:
-                    logger.info(f"状态切换：{'说话' if _last_speaking else '静音'} → {'说话' if current_speaking else '静音'}")
-                    _transition_start = time.time()
-                _last_speaking = current_speaking
-
-            if audio_frames[0][1]!=0 and audio_frames[1][1]!=0: #全为静音数据，只需要取fullimg
-                self.speaking = False
-                audiotype = audio_frames[0][1]
-                if self.custom_index.get(audiotype) is not None: #有自定义视频
-                    mirindex = self.mirror_index(len(self.custom_img_cycle[audiotype]),self.custom_index[audiotype])
-                    target_frame = self.custom_img_cycle[audiotype][mirindex]
-                    self.custom_index[audiotype] += 1
-                else:
-                    target_frame = self.frame_list_cycle[idx]
-                
-                if enable_transition:
-                    # 说话→静音过渡
-                    if time.time() - _transition_start < _transition_duration and _last_speaking_frame is not None:
-                        alpha = min(1.0, (time.time() - _transition_start) / _transition_duration)
-                        combine_frame = cv2.addWeighted(_last_speaking_frame, 1-alpha, target_frame, alpha, 0)
-                    else:
-                        combine_frame = target_frame
-                    # 缓存静音帧
-                    _last_silent_frame = combine_frame.copy()
-                else:
-                    combine_frame = target_frame
+            # 初始化录制状态
+            self.is_recording = True
+            self.record_start_time = time.time()
+            
+            # 初始化视频录制管道
+            if hasattr(self, 'width') and self.width > 0 and hasattr(self, 'height') and self.height > 0:
+                self._init_video_pipe(self.width, self.height)
             else:
-                self.speaking = True
-                try:
-                    current_frame = self.paste_back_frame(res_frame,idx)
-                except Exception as e:
-                    logger.warning(f"paste_back_frame error: {e}")
-                    continue
-                if enable_transition:
-                    # 静音→说话过渡
-                    if time.time() - _transition_start < _transition_duration and _last_silent_frame is not None:
-                        alpha = min(1.0, (time.time() - _transition_start) / _transition_duration)
-                        combine_frame = cv2.addWeighted(_last_silent_frame, 1-alpha, current_frame, alpha, 0)
-                    else:
-                        combine_frame = current_frame
-                    # 缓存说话帧
-                    _last_speaking_frame = combine_frame.copy()
-                else:
-                    combine_frame = current_frame
-
-            cv2.putText(combine_frame, "LiveTalking", (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.3, (128,128,128), 1)
-            if self.opt.transport=='virtualcam':
-                if vircam==None:
-                    height, width,_= combine_frame.shape
-                    vircam = pyvirtualcam.Camera(width=width, height=height, fps=25, fmt=pyvirtualcam.PixelFormat.BGR,print_fps=True)
-                vircam.send(combine_frame)
-            else: #webrtc
-                image = combine_frame
-                new_frame = VideoFrame.from_ndarray(image, format="bgr24")
-                asyncio.run_coroutine_threadsafe(video_track._queue.put((new_frame,None)), loop)
-            self.record_video_data(combine_frame)
-
-            for audio_frame in audio_frames:
-                frame,type,eventpoint = audio_frame
-                frame = (frame * 32767).astype(np.int16)
-
-                if self.opt.transport=='virtualcam':
-                    audio_tmp.put(frame.tobytes()) #TODO
-                else: #webrtc
-                    new_frame = AudioFrame(format='s16', layout='mono', samples=frame.shape[0])
-                    new_frame.planes[0].update(frame.tobytes())
-                    new_frame.sample_rate=16000
-                    asyncio.run_coroutine_threadsafe(audio_track._queue.put((new_frame,eventpoint)), loop)
-                self.record_audio_data(frame)
-            if self.opt.transport=='virtualcam':
-                vircam.sleep_until_next_frame()
-        if self.opt.transport=='virtualcam':
-            audio_thread.join()
-            vircam.close()
-        logger.info('basereal process_frames thread stop') 
+                logger.warning("视频尺寸未初始化，将在第一帧到达时初始化录制")
+                self._record_video_pipe = None
+                self._record_audio_pipe = None
+            
+            logger.info("录制已开始")
+        except Exception as e:
+            logger.error(f"开始录制失败: {e}")
+            self.is_recording = False
     
-    # def process_custom(self,audiotype:int,idx:int):
-    #     if self.curr_state!=audiotype: #从推理切到口播
-    #         if idx in self.switch_pos:  #在卡点位置可以切换
-    #             self.curr_state=audiotype
-    #             self.custom_index=0
-    #     else:
-    #         self.custom_index+=1
+    def stop_recording(self):
+        """停止录制"""
+        try:
+            self.is_recording = False
+            
+            # 关闭视频管道
+            if hasattr(self, '_record_video_pipe') and self._record_video_pipe is not None:
+                try:
+                    self._record_video_pipe.stdin.close()
+                    self._record_video_pipe.wait()
+                except Exception as e:
+                    logger.error(f"关闭视频管道失败: {e}")
+                finally:
+                    self._record_video_pipe = None
+            
+            # 关闭音频管道
+            if hasattr(self, '_record_audio_pipe') and self._record_audio_pipe is not None:
+                try:
+                    self._record_audio_pipe.stdin.close()
+                    self._record_audio_pipe.wait()
+                except Exception as e:
+                    logger.error(f"关闭音频管道失败: {e}")
+                finally:
+                    self._record_audio_pipe = None
+            
+            if hasattr(self, 'record_video_file'):
+                logger.info(f"录制已停止，文件保存为: {self.record_video_file}")
+        except Exception as e:
+            logger.error(f"停止录制失败: {e}")
+
+    def _init_video_pipe(self, width, height):
+        """初始化视频录制管道"""
+        try:
+            # 确保尺寸是偶数（H.264编码要求）
+            width = width if width % 2 == 0 else width + 1
+            height = height if height % 2 == 0 else height + 1
+            
+            # 使用FFmpeg录制视频
+            ffmpeg_cmd = [
+                'ffmpeg',
+                '-y',  # 覆盖已存在的文件
+                '-f', 'rawvideo',
+                '-vcodec', 'rawvideo',
+                '-pix_fmt', 'bgr24',
+                '-s', f'{width}x{height}',  # 视频尺寸
+                '-r', str(self.fps),  # 帧率
+                '-i', '-',  # 从stdin读取
+                '-c:v', 'libx264',
+                '-pix_fmt', 'yuv420p',
+                '-preset', 'ultrafast',
+                self.record_video_file
+            ]
+            
+            self._record_video_pipe = subprocess.Popen(
+                ffmpeg_cmd,
+                stdin=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            logger.info(f"视频录制管道已初始化: {width}x{height} @ {self.fps}fps")
+        except Exception as e:
+            logger.error(f"初始化视频录制管道失败: {e}")
+            self._record_video_pipe = None
+
+    def _init_audio_pipe(self):
+        """初始化音频录制管道"""
+        try:
+            ffmpeg_cmd = [
+                'ffmpeg',
+                '-y',
+                '-f', 's16le',
+                '-ar', str(self.sample_rate),
+                '-ac', '1',
+                '-i', '-',
+                '-acodec', 'pcm_s16le',
+                self.record_audio_file
+            ]
+            
+            self._record_audio_pipe = subprocess.Popen(
+                ffmpeg_cmd,
+                stdin=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            logger.info("音频录制管道已初始化")
+        except Exception as e:
+            logger.error(f"初始化音频录制管道失败: {e}")
+            self._record_audio_pipe = None
