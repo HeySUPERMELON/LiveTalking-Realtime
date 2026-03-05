@@ -77,9 +77,12 @@ class BaseTTS:
         process_thread.start()
     
     def process_tts(self,quit_event):        
+        logger.info('ttsreal process_tts thread started')
         while not quit_event.is_set():
             try:
+                logger.debug(f'ttsreal waiting for message, queue size: {self.msgqueue.qsize()}')
                 msg:tuple[str, dict] = self.msgqueue.get(block=True, timeout=1)
+                logger.info(f'ttsreal got message: {msg[0][:50]}...')
                 self.state=State.RUNNING
             except queue.Empty:
                 continue
