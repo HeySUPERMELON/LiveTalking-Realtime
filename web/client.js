@@ -10,7 +10,8 @@ function connectWebSocket() {
     }
     
     var host = window.location.hostname;
-    ws = new WebSocket("ws://" + host + ":8000/humanecho");
+    var port = window.location.port || '8010';
+    ws = new WebSocket("ws://" + host + ":" + port + "/humanecho");
     
     ws.onopen = function() {
         console.log('WebSocket connected');
