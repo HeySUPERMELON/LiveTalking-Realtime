@@ -48,9 +48,12 @@ from logger import logger
 import gc
 
 
+import threading
+
 app = Flask(__name__)
 sockets = Sockets(app)
 nerfreals:Dict[int, BaseReal] = {} #sessionid:BaseReal
+nerfreals_lock = threading.Lock() # 线程安全锁
 opt = None
 model = None
 avatar = None
@@ -71,28 +74,28 @@ def echo_socket(ws):
                 interrupt = data.get('interrupt', False)
                 
                 # 检查sessionid是否存在
-                if sessionid not in nerfreals:
-                    response = {
-                        "code": -1,
-                        "msg": f"Session {sessionid} not found"
-                    }
-                    ws.send(json.dumps(response))
-                    continue
-                
-                # 处理中断
-                if interrupt:
-                    logger.info(f"Interrupting talk for session {sessionid}")
-                    nerfreals[sessionid].flush_talk()
-                
-                # 处理消息类型
-                if msg_type == 'echo':
-                    logger.info(f"Processing echo message for session {sessionid}")
-                    nerfreals[sessionid].put_msg_txt(text)
-                elif msg_type == 'chat':
-                    logger.info(f"Processing chat message for session {sessionid}, sending to LLM")
-                    # 在后台线程中处理LLM响应
-                    import threading
-                    threading.Thread(target=llm_response, args=(text, nerfreals[sessionid])).start()
+                with nerfreals_lock:
+                    if sessionid not in nerfreals:
+                        response = {
+                            "code": -1,
+                            "msg": f"Session {sessionid} not found"
+                        }
+                        ws.send(json.dumps(response))
+                        continue
+                    
+                    # 处理中断
+                    if interrupt:
+                        logger.info(f"Interrupting talk for session {sessionid}")
+                        nerfreals[sessionid].flush_talk()
+                    
+                    # 处理消息类型
+                    if msg_type == 'echo':
+                        logger.info(f"Processing echo message for session {sessionid}")
+                        nerfreals[sessionid].put_msg_txt(text)
+                    elif msg_type == 'chat':
+                        logger.info(f"Processing chat message for session {sessionid}, sending to LLM")
+                        # 在后台线程中处理LLM响应
+                        threading.Thread(target=llm_response, args=(text, nerfreals[sessionid])).start()
                 
                 # 返回成功响应
                 response = {
@@ -150,10 +153,12 @@ async def offer(request):
     #         ),
     #     )
     sessionid = randN(6) #len(nerfreals)
-    nerfreals[sessionid] = None
-    logger.info('sessionid=%d, session num=%d',sessionid,len(nerfreals))
+    with nerfreals_lock:
+        nerfreals[sessionid] = None
+        logger.info('sessionid=%d, session num=%d',sessionid,len(nerfreals))
     nerfreal = await asyncio.get_event_loop().run_in_executor(None, build_nerfreal,sessionid)
-    nerfreals[sessionid] = nerfreal
+    with nerfreals_lock:
+        nerfreals[sessionid] = nerfreal
     
     #ice_server = RTCIceServer(urls='stun:stun.l.google.com:19302')
     ice_server = RTCIceServer(urls='stun:stun.freeswitch.org:3478')
@@ -166,12 +171,14 @@ async def offer(request):
         if pc.connectionState == "failed":
             await pc.close()
             pcs.discard(pc)
-            if sessionid in nerfreals:
-                del nerfreals[sessionid]
+            with nerfreals_lock:
+                if sessionid in nerfreals:
+                    del nerfreals[sessionid]
         if pc.connectionState == "closed":
             pcs.discard(pc)
-            if sessionid in nerfreals:
-                del nerfreals[sessionid]
+            with nerfreals_lock:
+                if sessionid in nerfreals:
+                    del nerfreals[sessionid]
             # gc.collect()
 
     player = HumanPlayer(nerfreals[sessionid])
@@ -205,25 +212,26 @@ async def human(request):
         sessionid = params.get('sessionid',0)
         logger.info(f"Received message from session {sessionid}: type={params.get('type')}, text={params.get('text', '')[:50]}...")
         
-        if sessionid not in nerfreals:
-            logger.warning(f"Session {sessionid} not found")
-            return web.Response(
-                content_type="application/json",
-                text=json.dumps(
-                    {"code": -1, "msg": f"Session {sessionid} not found"}
-                ),
-            )
-        if params.get('interrupt'):
-            logger.info(f"Interrupting talk for session {sessionid}")
-            nerfreals[sessionid].flush_talk()
+        with nerfreals_lock:
+            if sessionid not in nerfreals:
+                logger.warning(f"Session {sessionid} not found")
+                return web.Response(
+                    content_type="application/json",
+                    text=json.dumps(
+                        {"code": -1, "msg": f"Session {sessionid} not found"}
+                    ),
+                )
+            if params.get('interrupt'):
+                logger.info(f"Interrupting talk for session {sessionid}")
+                nerfreals[sessionid].flush_talk()
 
-        if params['type']=='echo':
-            logger.info(f"Processing echo message for session {sessionid}")
-            nerfreals[sessionid].put_msg_txt(params['text'])
-        elif params['type']=='chat':
-            logger.info(f"Processing chat message for session {sessionid}, sending to LLM")
-            asyncio.get_event_loop().run_in_executor(None, llm_response, params['text'],nerfreals[sessionid])                          
-            #nerfreals[sessionid].put_msg_txt(res)
+            if params['type']=='echo':
+                logger.info(f"Processing echo message for session {sessionid}")
+                nerfreals[sessionid].put_msg_txt(params['text'])
+            elif params['type']=='chat':
+                logger.info(f"Processing chat message for session {sessionid}, sending to LLM")
+                asyncio.get_event_loop().run_in_executor(None, llm_response, params['text'],nerfreals[sessionid])                         
+                #nerfreals[sessionid].put_msg_txt(res)
 
         logger.info(f"Message processed successfully for session {sessionid}")
         return web.Response(
@@ -246,14 +254,15 @@ async def interrupt_talk(request):
         params = await request.json()
 
         sessionid = params.get('sessionid',0)
-        if sessionid not in nerfreals:
-            return web.Response(
-                content_type="application/json",
-                text=json.dumps(
-                    {"code": -1, "msg": f"Session {sessionid} not found"}
-                ),
-            )
-        nerfreals[sessionid].flush_talk()
+        with nerfreals_lock:
+            if sessionid not in nerfreals:
+                return web.Response(
+                    content_type="application/json",
+                    text=json.dumps(
+                        {"code": -1, "msg": f"Session {sessionid} not found"}
+                    ),
+                )
+            nerfreals[sessionid].flush_talk()
         
         return web.Response(
             content_type="application/json",
@@ -274,17 +283,18 @@ async def humanaudio(request):
     try:
         form= await request.post()
         sessionid = int(form.get('sessionid',0))
-        if sessionid not in nerfreals:
-            return web.Response(
-                content_type="application/json",
-                text=json.dumps(
-                    {"code": -1, "msg": f"Session {sessionid} not found"}
-                ),
-            )
-        fileobj = form["file"]
-        filename=fileobj.filename
-        filebytes=fileobj.file.read()
-        nerfreals[sessionid].put_audio_file(filebytes)
+        with nerfreals_lock:
+            if sessionid not in nerfreals:
+                return web.Response(
+                    content_type="application/json",
+                    text=json.dumps(
+                        {"code": -1, "msg": f"Session {sessionid} not found"}
+                    ),
+                )
+            fileobj = form["file"]
+            filename=fileobj.filename
+            filebytes=fileobj.file.read()
+            nerfreals[sessionid].put_audio_file(filebytes)
 
         return web.Response(
             content_type="application/json",
@@ -306,7 +316,8 @@ async def set_audiotype(request):
         params = await request.json()
 
         sessionid = params.get('sessionid',0)    
-        nerfreals[sessionid].set_custom_state(params['audiotype'],params['reinit'])
+        with nerfreals_lock:
+            nerfreals[sessionid].set_custom_state(params['audiotype'],params['reinit'])
 
         return web.Response(
             content_type="application/json",
@@ -328,17 +339,18 @@ async def record(request):
         params = await request.json()
         sessionid = params.get('sessionid', 0)
         # 检查sessionid是否存在
-        if sessionid not in nerfreals:
-            return web.Response(
-                content_type="application/json",
-                text=json.dumps(
-                    {"code": -1, "msg": f"Session {sessionid} not found"}
-                ),
-            )            
-        if params['type']=='start_record':
-            nerfreals[sessionid].start_recording()
-        elif params['type']=='end_record':
-            nerfreals[sessionid].stop_recording()
+        with nerfreals_lock:
+            if sessionid not in nerfreals:
+                return web.Response(
+                    content_type="application/json",
+                    text=json.dumps(
+                        {"code": -1, "msg": f"Session {sessionid} not found"}
+                    ),
+                )            
+            if params['type']=='start_record':
+                nerfreals[sessionid].start_recording()
+            elif params['type']=='end_record':
+                nerfreals[sessionid].stop_recording()
         return web.Response(
             content_type="application/json",
             text=json.dumps(
@@ -359,19 +371,20 @@ async def is_speaking(request):
         params = await request.json()
 
         sessionid = params.get('sessionid',0)
-        if sessionid not in nerfreals:
+        with nerfreals_lock:
+            if sessionid not in nerfreals:
+                return web.Response(
+                    content_type="application/json",
+                    text=json.dumps(
+                        {"code": -1, "msg": f"Session {sessionid} not found"}
+                    ),
+                )
             return web.Response(
                 content_type="application/json",
                 text=json.dumps(
-                    {"code": -1, "msg": f"Session {sessionid} not found"}
+                    {"code": 0, "data": nerfreals[sessionid].is_speaking()}
                 ),
             )
-        return web.Response(
-            content_type="application/json",
-            text=json.dumps(
-                {"code": 0, "data": nerfreals[sessionid].is_speaking()}
-            ),
-        )
     except Exception as e:
         logger.exception('exception:')
         return web.Response(
@@ -398,7 +411,8 @@ async def post(url,data):
 
 async def run(push_url,sessionid):
     nerfreal = await asyncio.get_event_loop().run_in_executor(None, build_nerfreal,sessionid)
-    nerfreals[sessionid] = nerfreal
+    with nerfreals_lock:
+        nerfreals[sessionid] = nerfreal
 
     pc = RTCPeerConnection()
     pcs.add(pc)
@@ -410,7 +424,8 @@ async def run(push_url,sessionid):
             await pc.close()
             pcs.discard(pc)
 
-    player = HumanPlayer(nerfreals[sessionid])
+    with nerfreals_lock:
+        player = HumanPlayer(nerfreals[sessionid])
     audio_sender = pc.addTrack(player.audio)
     video_sender = pc.addTrack(player.video)
 
@@ -546,7 +561,15 @@ if __name__ == '__main__':
     # 启动WebSocket服务器
     def start_websocket_server():
         print('start websocket server')
-        server = pywsgi.WSGIServer(('0.0.0.0', 8000), app, handler_class=WebSocketHandler)
+        # 使用Flask-Sockets提供的方式启动服务器
+        from geventwebsocket.handler import WebSocketHandler
+        from gevent.pywsgi import WSGIServer
+        
+        # 创建WSGI应用，包含WebSocket路由
+        wsgi_app = sockets.wsgi_app
+        
+        # 启动服务器
+        server = WSGIServer(('0.0.0.0', 8000), wsgi_app, handler_class=WebSocketHandler)
         server.serve_forever()
 
     # 启动aiohttp服务器

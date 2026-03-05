@@ -3,6 +3,12 @@ var ws = null;
 
 // 建立WebSocket连接
 function connectWebSocket() {
+    // 检查是否已经存在活跃的WebSocket连接
+    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+        console.log('WebSocket connection already exists');
+        return;
+    }
+    
     var host = window.location.hostname;
     ws = new WebSocket("ws://" + host + ":8000/humanecho");
     
@@ -22,8 +28,10 @@ function connectWebSocket() {
     
     ws.onclose = function(e) {
         console.log('WebSocket closed');
-        // 尝试重新连接
-        setTimeout(connectWebSocket, 5000);
+        // 只有在页面未关闭的情况下才尝试重新连接
+        if (!window.isClosing) {
+            setTimeout(connectWebSocket, 5000);
+        }
     };
     
     ws.onerror = function(e) {
@@ -130,6 +138,12 @@ function stop() {
 }
 
 window.onunload = function(event) {
+    // 标记页面正在关闭
+    window.isClosing = true;
+    // 关闭WebSocket连接
+    if (ws) {
+        ws.close();
+    }
     // 在这里执行你想要的操作
     setTimeout(() => {
         pc.close();
@@ -137,6 +151,12 @@ window.onunload = function(event) {
 };
 
 window.onbeforeunload = function (e) {
+        // 标记页面正在关闭
+        window.isClosing = true;
+        // 关闭WebSocket连接
+        if (ws) {
+            ws.close();
+        }
         setTimeout(() => {
                 pc.close();
             }, 500);
@@ -145,6 +165,5 @@ window.onbeforeunload = function (e) {
         if (e) {
           e.returnValue = '关闭提示'
         }
-        // Chrome, Safari, Firefox 4+, Opera 12+ , IE 9+
-        return '关闭提示'
+        // Chrome, Safari, Firefox 4+, Opera 12+ , IE 9+        return '关闭提示'
       }
