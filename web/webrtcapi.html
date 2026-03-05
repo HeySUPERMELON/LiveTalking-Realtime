@@ -80,21 +80,17 @@
       var message = $('#message').val();
       console.log('Sending: ' + message);
       console.log('sessionid: ',document.getElementById('sessionid').value);
-      fetch('/human', {
-            body: JSON.stringify({
-                text: message,
-                type: 'echo',
-                interrupt: true,
-                sessionid:parseInt(document.getElementById('sessionid').value),
-            }),
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            method: 'POST'
+      
+      // 使用WebSocket发送消息
+      sendWebSocketMessage({
+          text: message,
+          type: 'echo',
+          interrupt: true,
+          sessionid: parseInt(document.getElementById('sessionid').value)
       });
-      //ws.send(message);
+      
       $('#message').val('');
-	  });
+  });
 
     $('#btn_start_record').click(function() {
         // 开始录制

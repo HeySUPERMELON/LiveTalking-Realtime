@@ -1,4 +1,53 @@
 var pc = null;
+var ws = null;
+
+// 建立WebSocket连接
+function connectWebSocket() {
+    var host = window.location.hostname;
+    ws = new WebSocket("ws://" + host + ":8000/humanecho");
+    
+    ws.onopen = function() {
+        console.log('WebSocket connected');
+    };
+    
+    ws.onmessage = function(e) {
+        console.log('WebSocket received: ' + e.data);
+        try {
+            var response = JSON.parse(e.data);
+            console.log('WebSocket response:', response);
+        } catch (error) {
+            console.error('Error parsing WebSocket message:', error);
+        }
+    };
+    
+    ws.onclose = function(e) {
+        console.log('WebSocket closed');
+        // 尝试重新连接
+        setTimeout(connectWebSocket, 5000);
+    };
+    
+    ws.onerror = function(e) {
+        console.error('WebSocket error:', e);
+    };
+}
+
+// 发送WebSocket消息
+function sendWebSocketMessage(data) {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify(data));
+        console.log('WebSocket message sent:', data);
+    } else {
+        console.error('WebSocket not connected');
+        // 如果WebSocket未连接，回退到HTTP请求
+        fetch('/human', {
+            body: JSON.stringify(data),
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            method: 'POST'
+        });
+    }
+}
 
 function negotiate() {
     pc.addTransceiver('video', { direction: 'recvonly' });
@@ -65,6 +114,9 @@ function start() {
     document.getElementById('start').style.display = 'none';
     negotiate();
     document.getElementById('stop').style.display = 'inline-block';
+    
+    // 建立WebSocket连接
+    connectWebSocket();
 }
 
 function stop() {
