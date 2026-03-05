@@ -111,10 +111,12 @@ async def offer(request):
         if pc.connectionState == "failed":
             await pc.close()
             pcs.discard(pc)
-            del nerfreals[sessionid]
+            if sessionid in nerfreals:
+                del nerfreals[sessionid]
         if pc.connectionState == "closed":
             pcs.discard(pc)
-            del nerfreals[sessionid]
+            if sessionid in nerfreals:
+                del nerfreals[sessionid]
             # gc.collect()
 
     player = HumanPlayer(nerfreals[sessionid])
@@ -146,13 +148,20 @@ async def human(request):
         params = await request.json()
 
         sessionid = params.get('sessionid',0)
+        if sessionid not in nerfreals:
+            return web.Response(
+                content_type="application/json",
+                text=json.dumps(
+                    {"code": -1, "msg": f"Session {sessionid} not found"}
+                ),
+            )
         if params.get('interrupt'):
             nerfreals[sessionid].flush_talk()
 
         if params['type']=='echo':
             nerfreals[sessionid].put_msg_txt(params['text'])
         elif params['type']=='chat':
-            asyncio.get_event_loop().run_in_executor(None, llm_response, params['text'],nerfreals[sessionid])                         
+            asyncio.get_event_loop().run_in_executor(None, llm_response, params['text'],nerfreals[sessionid])                          
             #nerfreals[sessionid].put_msg_txt(res)
 
         return web.Response(
@@ -175,6 +184,13 @@ async def interrupt_talk(request):
         params = await request.json()
 
         sessionid = params.get('sessionid',0)
+        if sessionid not in nerfreals:
+            return web.Response(
+                content_type="application/json",
+                text=json.dumps(
+                    {"code": -1, "msg": f"Session {sessionid} not found"}
+                ),
+            )
         nerfreals[sessionid].flush_talk()
         
         return web.Response(
@@ -196,6 +212,13 @@ async def humanaudio(request):
     try:
         form= await request.post()
         sessionid = int(form.get('sessionid',0))
+        if sessionid not in nerfreals:
+            return web.Response(
+                content_type="application/json",
+                text=json.dumps(
+                    {"code": -1, "msg": f"Session {sessionid} not found"}
+                ),
+            )
         fileobj = form["file"]
         filename=fileobj.filename
         filebytes=fileobj.file.read()
@@ -220,6 +243,27 @@ async def set_audiotype(request):
     try:
         params = await request.json()
 
+        sessionid = params.get('sessionid',0)    
+        nerfreals[sessionid].set_custom_state(params['audiotype'],params['reinit'])
+
+        return web.Response(
+            content_type="application/json",
+            text=json.dumps(
+                {"code": 0, "msg":"ok"}
+            ),
+        )
+    except Exception as e:
+        logger.exception('exception:')
+        return web.Response(
+            content_type="application/json",
+            text=json.dumps(
+                {"code": -1, "msg": str(e)}
+            ),
+        )
+
+async def record(request):
+    try:
+        params = await request.json()
         sessionid = params.get('sessionid', 0)
         # 检查sessionid是否存在
         if sessionid not in nerfreals:
@@ -228,8 +272,7 @@ async def set_audiotype(request):
                 text=json.dumps(
                     {"code": -1, "msg": f"Session {sessionid} not found"}
                 ),
-            )
-            
+            )            
         if params['type']=='start_record':
             nerfreals[sessionid].start_recording()
         elif params['type']=='end_record':
@@ -250,15 +293,31 @@ async def set_audiotype(request):
         )
 
 async def is_speaking(request):
-    params = await request.json()
+    try:
+        params = await request.json()
 
-    sessionid = params.get('sessionid',0)
-    return web.Response(
-        content_type="application/json",
-        text=json.dumps(
-            {"code": 0, "data": nerfreals[sessionid].is_speaking()}
-        ),
-    )
+        sessionid = params.get('sessionid',0)
+        if sessionid not in nerfreals:
+            return web.Response(
+                content_type="application/json",
+                text=json.dumps(
+                    {"code": -1, "msg": f"Session {sessionid} not found"}
+                ),
+            )
+        return web.Response(
+            content_type="application/json",
+            text=json.dumps(
+                {"code": 0, "data": nerfreals[sessionid].is_speaking()}
+            ),
+        )
+    except Exception as e:
+        logger.exception('exception:')
+        return web.Response(
+            content_type="application/json",
+            text=json.dumps(
+                {"code": -1, "msg": str(e)}
+            ),
+        )
 
 
 async def on_shutdown(app):
