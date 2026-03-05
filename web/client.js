@@ -69,6 +69,7 @@ function start() {
 
 function stop() {
     document.getElementById('stop').style.display = 'none';
+    document.getElementById('start').style.display = 'inline-block';
 
     // close peer connection
     setTimeout(() => {

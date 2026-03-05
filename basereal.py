@@ -264,12 +264,16 @@ class BaseReal:
         if not self.recording:
             return
         self.recording = False 
-        self._record_video_pipe.stdin.close()  #wait() 
-        self._record_video_pipe.wait()
-        self._record_audio_pipe.stdin.close()
-        self._record_audio_pipe.wait()
-        cmd_combine_audio = f"ffmpeg -y -i temp{self.opt.sessionid}.aac -i temp{self.opt.sessionid}.mp4 -c:v copy -c:a copy data/record.mp4"
-        os.system(cmd_combine_audio) 
+        if self._record_video_pipe is not None:
+            self._record_video_pipe.stdin.close()  #wait() 
+            self._record_video_pipe.wait()
+        if self._record_audio_pipe is not None:
+            self._record_audio_pipe.stdin.close()
+            self._record_audio_pipe.wait()
+        # 检查文件是否存在，然后合并音频和视频
+        if os.path.exists(f"temp{self.opt.sessionid}.aac") and os.path.exists(f"temp{self.opt.sessionid}.mp4"):
+            cmd_combine_audio = f"ffmpeg -y -i temp{self.opt.sessionid}.aac -i temp{self.opt.sessionid}.mp4 -c:v copy -c:a copy data/record.mp4"
+            os.system(cmd_combine_audio) 
         #os.remove(output_path)
 
     def mirror_index(self,size, index):
