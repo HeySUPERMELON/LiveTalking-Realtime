@@ -468,59 +468,73 @@ if __name__ == '__main__':
         
         logger.info('WebSocket connection established')
         
-        async for msg in ws:
-            if msg.type == web.WSMsgType.TEXT:
-                try:
-                    logger.info(f'Received WebSocket message: {msg.data[:50]}...')
-                    # 解析消息
-                    data = json.loads(msg.data)
-                    sessionid = data.get('sessionid', 0)
-                    msg_type = data.get('type', '')
-                    text = data.get('text', '')
-                    interrupt = data.get('interrupt', False)
-                    
-                    # 检查sessionid是否存在
-                    with nerfreals_lock:
-                        if sessionid not in nerfreals:
-                            response = {
-                                "code": -1,
-                                "msg": f"Session {sessionid} not found"
-                            }
+        try:
+            async for msg in ws:
+                if msg.type == web.WSMsgType.TEXT:
+                    try:
+                        logger.info(f'Received WebSocket message: {msg.data[:50]}...')
+                        # 解析消息
+                        data = json.loads(msg.data)
+                        sessionid = data.get('sessionid', 0)
+                        msg_type = data.get('type', '')
+                        text = data.get('text', '')
+                        interrupt = data.get('interrupt', False)
+                        
+                        # 检查sessionid是否存在
+                        with nerfreals_lock:
+                            if sessionid not in nerfreals:
+                                response = {
+                                    "code": -1,
+                                    "msg": f"Session {sessionid} not found"
+                                }
+                                if not ws.closed:
+                                    await ws.send_str(json.dumps(response))
+                                continue
+                            
+                            # 处理中断
+                            if interrupt:
+                                logger.info(f"Interrupting talk for session {sessionid}")
+                                nerfreals[sessionid].flush_talk()
+                            
+                            # 处理消息类型
+                            if msg_type == 'echo':
+                                logger.info(f"Processing echo message for session {sessionid}")
+                                nerfreals[sessionid].put_msg_txt(text)
+                            elif msg_type == 'chat':
+                                logger.info(f"Processing chat message for session {sessionid}, sending to LLM")
+                                # 在后台线程中处理LLM响应
+                                threading.Thread(target=llm_response, args=(text, nerfreals[sessionid])).start()
+                        
+                        # 返回成功响应
+                        response = {
+                            "code": 0,
+                            "msg": "ok"
+                        }
+                        if not ws.closed:
                             await ws.send_str(json.dumps(response))
-                            continue
-                        
-                        # 处理中断
-                        if interrupt:
-                            logger.info(f"Interrupting talk for session {sessionid}")
-                            nerfreals[sessionid].flush_talk()
-                        
-                        # 处理消息类型
-                        if msg_type == 'echo':
-                            logger.info(f"Processing echo message for session {sessionid}")
-                            nerfreals[sessionid].put_msg_txt(text)
-                        elif msg_type == 'chat':
-                            logger.info(f"Processing chat message for session {sessionid}, sending to LLM")
-                            # 在后台线程中处理LLM响应
-                            threading.Thread(target=llm_response, args=(text, nerfreals[sessionid])).start()
-                    
-                    # 返回成功响应
-                    response = {
-                        "code": 0,
-                        "msg": "ok"
-                    }
-                    await ws.send_str(json.dumps(response))
-                    logger.info(f"Message processed successfully for session {sessionid}")
-                except Exception as e:
-                    logger.exception('WebSocket message processing exception:')
-                    response = {
-                        "code": -1,
-                        "msg": str(e)
-                    }
-                    await ws.send_str(json.dumps(response))
-            elif msg.type == web.WSMsgType.ERROR:
-                logger.error(f'WebSocket error: {ws.exception()}')
+                        logger.info(f"Message processed successfully for session {sessionid}")
+                    except json.JSONDecodeError as e:
+                        logger.error(f'JSON decode error: {e}')
+                        if not ws.closed:
+                            response = {"code": -1, "msg": f"Invalid JSON: {str(e)}"}
+                            await ws.send_str(json.dumps(response))
+                    except Exception as e:
+                        logger.exception('WebSocket message processing exception:')
+                        if not ws.closed:
+                            response = {"code": -1, "msg": str(e)}
+                            await ws.send_str(json.dumps(response))
+                elif msg.type == web.WSMsgType.ERROR:
+                    logger.error(f'WebSocket error: {ws.exception()}')
+                elif msg.type == web.WSMsgType.CLOSED:
+                    logger.info('WebSocket connection closed by client')
+                    break
+        except Exception as e:
+            logger.exception('WebSocket handler exception:')
+        finally:
+            logger.info('WebSocket connection closed')
+            if not ws.closed:
+                await ws.close()
         
-        logger.info('WebSocket connection closed')
         return ws
     
     appasync.router.add_get('/humanecho', websocket_handler)

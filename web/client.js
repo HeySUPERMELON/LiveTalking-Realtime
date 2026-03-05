@@ -42,19 +42,36 @@ function connectWebSocket() {
 
 // 发送WebSocket消息
 function sendWebSocketMessage(data) {
-    if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify(data));
-        console.log('WebSocket message sent:', data);
-    } else {
-        console.error('WebSocket not connected');
-        // 如果WebSocket未连接，回退到HTTP请求
-        fetch('/human', {
-            body: JSON.stringify(data),
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            method: 'POST'
-        });
+    try {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify(data));
+            console.log('WebSocket message sent:', data);
+        } else if (ws && ws.readyState === WebSocket.CONNECTING) {
+            // 如果正在连接，等待连接建立后再发送
+            console.log('WebSocket is connecting, waiting...');
+            ws.addEventListener('open', function() {
+                try {
+                    ws.send(JSON.stringify(data));
+                    console.log('WebSocket message sent after connection:', data);
+                } catch (e) {
+                    console.error('Error sending message after connection:', e);
+                }
+            }, { once: true });
+        } else {
+            console.error('WebSocket not connected, falling back to HTTP');
+            // 如果WebSocket未连接，回退到HTTP请求
+            fetch('/human', {
+                body: JSON.stringify(data),
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                method: 'POST'
+            }).catch(function(error) {
+                console.error('HTTP request failed:', error);
+            });
+        }
+    } catch (e) {
+        console.error('Error in sendWebSocketMessage:', e);
     }
 }
 
