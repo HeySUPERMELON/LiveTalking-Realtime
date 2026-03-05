@@ -20,9 +20,9 @@ from flask import Flask, render_template,send_from_directory,request, jsonify
 from flask_sockets import Sockets
 import base64
 import json
-#import gevent
-#from gevent import pywsgi
-#from geventwebsocket.handler import WebSocketHandler
+import gevent
+from gevent import pywsgi
+from geventwebsocket.handler import WebSocketHandler
 import re
 import numpy as np
 from threading import Thread,Event
@@ -49,11 +49,66 @@ import gc
 
 
 app = Flask(__name__)
-#sockets = Sockets(app)
+sockets = Sockets(app)
 nerfreals:Dict[int, BaseReal] = {} #sessionid:BaseReal
 opt = None
 model = None
 avatar = None
+
+@sockets.route('/humanecho')
+def echo_socket(ws):
+    logger.info('WebSocket connection established')
+    while not ws.closed:
+        message = ws.receive()
+        if message:
+            try:
+                logger.info(f'Received WebSocket message: {message[:50]}...')
+                # 解析消息
+                data = json.loads(message)
+                sessionid = data.get('sessionid', 0)
+                msg_type = data.get('type', '')
+                text = data.get('text', '')
+                interrupt = data.get('interrupt', False)
+                
+                # 检查sessionid是否存在
+                if sessionid not in nerfreals:
+                    response = {
+                        "code": -1,
+                        "msg": f"Session {sessionid} not found"
+                    }
+                    ws.send(json.dumps(response))
+                    continue
+                
+                # 处理中断
+                if interrupt:
+                    logger.info(f"Interrupting talk for session {sessionid}")
+                    nerfreals[sessionid].flush_talk()
+                
+                # 处理消息类型
+                if msg_type == 'echo':
+                    logger.info(f"Processing echo message for session {sessionid}")
+                    nerfreals[sessionid].put_msg_txt(text)
+                elif msg_type == 'chat':
+                    logger.info(f"Processing chat message for session {sessionid}, sending to LLM")
+                    # 在后台线程中处理LLM响应
+                    import threading
+                    threading.Thread(target=llm_response, args=(text, nerfreals[sessionid])).start()
+                
+                # 返回成功响应
+                response = {
+                    "code": 0,
+                    "msg": "ok"
+                }
+                ws.send(json.dumps(response))
+                logger.info(f"Message processed successfully for session {sessionid}")
+            except Exception as e:
+                logger.exception('WebSocket message processing exception:')
+                response = {
+                    "code": -1,
+                    "msg": str(e)
+                }
+                ws.send(json.dumps(response))
+    logger.info('WebSocket connection closed')
         
 
 #####webrtc###############################
@@ -148,7 +203,10 @@ async def human(request):
         params = await request.json()
 
         sessionid = params.get('sessionid',0)
+        logger.info(f"Received message from session {sessionid}: type={params.get('type')}, text={params.get('text', '')[:50]}...")
+        
         if sessionid not in nerfreals:
+            logger.warning(f"Session {sessionid} not found")
             return web.Response(
                 content_type="application/json",
                 text=json.dumps(
@@ -156,14 +214,18 @@ async def human(request):
                 ),
             )
         if params.get('interrupt'):
+            logger.info(f"Interrupting talk for session {sessionid}")
             nerfreals[sessionid].flush_talk()
 
         if params['type']=='echo':
+            logger.info(f"Processing echo message for session {sessionid}")
             nerfreals[sessionid].put_msg_txt(params['text'])
         elif params['type']=='chat':
+            logger.info(f"Processing chat message for session {sessionid}, sending to LLM")
             asyncio.get_event_loop().run_in_executor(None, llm_response, params['text'],nerfreals[sessionid])                          
             #nerfreals[sessionid].put_msg_txt(res)
 
+        logger.info(f"Message processed successfully for session {sessionid}")
         return web.Response(
             content_type="application/json",
             text=json.dumps(
@@ -481,13 +543,21 @@ if __name__ == '__main__':
                 loop.run_until_complete(run(push_url,k))
         loop.run_forever()    
     #Thread(target=run_server, args=(web.AppRunner(appasync),)).start()
-    run_server(web.AppRunner(appasync))
+    # 启动WebSocket服务器
+    def start_websocket_server():
+        print('start websocket server')
+        server = pywsgi.WSGIServer(('0.0.0.0', 8000), app, handler_class=WebSocketHandler)
+        server.serve_forever()
 
-    #app.on_shutdown.append(on_shutdown)
-    #app.router.add_post("/offer", offer)
+    # 启动aiohttp服务器
+    def start_aiohttp_server():
+        run_server(web.AppRunner(appasync))
 
-    # print('start websocket server')
-    # server = pywsgi.WSGIServer(('0.0.0.0', 8000), app, handler_class=WebSocketHandler)
-    # server.serve_forever()
+    # 在不同的线程中启动两个服务器
+    websocket_thread = Thread(target=start_websocket_server, daemon=True)
+    websocket_thread.start()
+
+    # 启动aiohttp服务器（主线程）
+    start_aiohttp_server()
     
     

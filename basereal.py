@@ -109,6 +109,7 @@ class BaseReal:
         self.__loadcustom()
 
     def put_msg_txt(self,msg,datainfo:dict={}):
+        logger.info(f"Putting message text: {msg[:50]}...")
         self.tts.put_msg_txt(msg,datainfo)
     
     def put_audio_frame(self,audio_chunk,datainfo:dict={}): #16khz 20ms pcm
