@@ -561,15 +561,12 @@ if __name__ == '__main__':
     # 启动WebSocket服务器
     def start_websocket_server():
         print('start websocket server')
-        # 使用Flask-Sockets提供的方式启动服务器
+        # 直接使用Flask应用对象启动服务器
         from geventwebsocket.handler import WebSocketHandler
         from gevent.pywsgi import WSGIServer
         
-        # 创建WSGI应用，包含WebSocket路由
-        wsgi_app = sockets.wsgi_app
-        
-        # 启动服务器
-        server = WSGIServer(('0.0.0.0', 8000), wsgi_app, handler_class=WebSocketHandler)
+        # 启动服务器，使用Flask应用对象
+        server = WSGIServer(('0.0.0.0', 8000), app, handler_class=WebSocketHandler)
         server.serve_forever()
 
     # 启动aiohttp服务器
