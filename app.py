@@ -370,6 +370,7 @@ if __name__ == '__main__':
 
     parser.add_argument('--max_session', type=int, default=1)  #multi session count
     parser.add_argument('--listenport', type=int, default=8010, help="web listen port")
+    parser.add_argument('--customvideo_config', type=str, default='', help="custom video config json file")
 
     opt = parser.parse_args()
     #app.config.from_object(opt)
