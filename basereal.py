@@ -173,6 +173,13 @@ class BaseReal:
         if self.recording:
             return
 
+        # 检查尺寸是否已设置
+        if self.width == 0 or self.height == 0:
+            logger.warning("Video size not set, recording will start when first frame is received")
+            self.recording = True
+            return
+
+        # 尺寸已设置，正常启动录制
         command = ['ffmpeg',
                     '-y', '-an',
                     '-f', 'rawvideo',
@@ -183,35 +190,29 @@ class BaseReal:
                     '-i', '-',
                     '-pix_fmt', 'yuv420p', 
                     '-vcodec', "h264",
-                    #'-f' , 'flv',                  
                     f'temp{self.opt.sessionid}.mp4']
         self._record_video_pipe = subprocess.Popen(command, shell=False, stdin=subprocess.PIPE)
 
         acommand = ['ffmpeg',
                     '-y', '-vn',
                     '-f', 's16le',
-                    #'-acodec','pcm_s16le',
                     '-ac', '1',
                     '-ar', '16000',
                     '-i', '-',
                     '-acodec', 'aac',
-                    #'-f' , 'wav',                  
                     f'temp{self.opt.sessionid}.aac']
         self._record_audio_pipe = subprocess.Popen(acommand, shell=False, stdin=subprocess.PIPE)
 
         self.recording = True
-        # self.recordq_video.queue.clear()
-        # self.recordq_audio.queue.clear()
-        # self.container = av.open(path, mode="w")
-    
-        # process_thread = Thread(target=self.record_frame, args=())
-        # process_thread.start()
     
     def record_video_data(self,image):
         if self.width == 0:
             print("image.shape:",image.shape)
             self.height,self.width,_ = image.shape
-        if self.recording:
+            # 如果录制已请求但尚未启动，现在启动
+            if self.recording and self._record_video_pipe is None:
+                self.start_recording()
+        if self.recording and self._record_video_pipe is not None:
             self._record_video_pipe.stdin.write(image.tostring())
 
     def record_audio_data(self,frame):
