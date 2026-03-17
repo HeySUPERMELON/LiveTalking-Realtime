@@ -41,14 +41,21 @@ def llm_response(message,nerfreal:BaseReal):
                     if char in ",.!;:，。！？：；" :
                         result = result+msg[lastpos:i+1]
                         lastpos = i+1
-                        if len(result)>10:
+                        # 检查是否只有标点符号
+                        if result.strip(' ,.!;:，。！？：；') and len(result)>10:
                             logger.info(result)
-                            nerfreal.put_msg_txt(result)
+                            # 确保内容是 UTF-8 格式
+                            result_utf8 = result.encode('utf-8').decode('utf-8')
+                            nerfreal.put_msg_txt(result_utf8)
                             result=""
                 result = result+msg[lastpos:]
     end = time.perf_counter()
     logger.info(f"llm Time to last chunk: {end-start}s")
-    nerfreal.put_msg_txt(result)    
+    # 检查是否只有标点符号
+    if result.strip(' ,.!;:，。！？：；'):
+        # 确保内容是 UTF-8 格式
+        result_utf8 = result.encode('utf-8').decode('utf-8')
+        nerfreal.put_msg_txt(result_utf8)
 
 def ai_agent_response(message,nerfreal:BaseReal):
     start = time.perf_counter()
@@ -102,8 +109,13 @@ def ai_agent_response(message,nerfreal:BaseReal):
                                                     if char in ",.!;:，。！？：；" :
                                                         result = result+msg[lastpos:i+1]
                                                         lastpos = i+1
-                                                        nerfreal.put_msg_txt(result)
-                                                        result=""
+                                                        # 检查是否只有标点符号
+                                                        if result.strip(' ,.!;:，。！？：；') and len(result)>10:
+                                                            logger.info(result)
+                                                            # 确保内容是 UTF-8 格式
+                                                            result_utf8 = result.encode('utf-8').decode('utf-8')
+                                                            nerfreal.put_msg_txt(result_utf8)
+                                                            result=""
                                                 result = result+msg[lastpos:]
                                     except json.JSONDecodeError:
                                         pass
@@ -113,8 +125,10 @@ def ai_agent_response(message,nerfreal:BaseReal):
         end = time.perf_counter()
         logger.info(f"ai_agent Time to last chunk: {end-start}s")
         # 发送剩余的消息
-        if result:
-            nerfreal.put_msg_txt(result)
+        if result.strip(' ,.!;:，。！？：；'):
+            # 确保内容是 UTF-8 格式
+            result_utf8 = result.encode('utf-8').decode('utf-8')
+            nerfreal.put_msg_txt(result_utf8)
 
     except requests.exceptions.RequestException as e:
         logger.error(f"请求出错：{e}")
