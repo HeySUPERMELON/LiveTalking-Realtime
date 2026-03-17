@@ -152,7 +152,10 @@ async def human(request):
         if params['type']=='echo':
             nerfreals[sessionid].put_msg_txt(params['text'])
         elif params['type']=='chat':
-            asyncio.get_event_loop().run_in_executor(None, llm_type, params['text'],nerfreals[sessionid])                         
+            if llm_type == 'llm':
+                asyncio.get_event_loop().run_in_executor(None, llm_response, params['text'],nerfreals[sessionid])       
+            elif llm_type == 'ai_agent':
+                asyncio.get_event_loop().run_in_executor(None, ai_agent_response, params['text'],nerfreals[sessionid])                  
             #nerfreals[sessionid].put_msg_txt(res)
 
         return web.Response(
@@ -348,7 +351,7 @@ if __name__ == '__main__':
 
     parser.add_argument('--max_session', type=int, default=1)  #multi session count
     parser.add_argument('--listenport', type=int, default=8010, help="web listen port")
-    parser.add_argument('--llm_type', type=str, default="llm") #llm or ai-agent
+    parser.add_argument('--llm_type', type=str, default="llm") #llm or ai_agent
 
     opt = parser.parse_args()
     #app.config.from_object(opt)
