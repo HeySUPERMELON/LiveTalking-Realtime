@@ -109,7 +109,9 @@ class BaseReal:
         self.__loadcustom()
 
     def put_msg_txt(self,msg,datainfo:dict={}):
-        self.tts.put_msg_txt(msg,datainfo)
+        # 强制转为 UTF-8 格式
+        msg_utf8 = msg.encode('utf-8').decode('utf-8')
+        self.tts.put_msg_txt(msg_utf8,datainfo)
     
     def put_audio_frame(self,audio_chunk,datainfo:dict={}): #16khz 20ms pcm
         self.asr.put_audio_frame(audio_chunk,datainfo)
