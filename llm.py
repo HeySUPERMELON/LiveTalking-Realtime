@@ -1,5 +1,3 @@
-from calendar import c
-from nturl2path import url2pathname
 import time
 import requests
 from basereal import BaseReal
@@ -58,21 +56,34 @@ def llm_response(message,nerfreal:BaseReal):
         nerfreal.put_msg_txt(result_utf8)
 
 def ai_agent_response(message,nerfreal:BaseReal):
+    # ──────────────────────────────────────────────
+    # 智能体 API 配置（填写你的接口信息）
+    # ──────────────────────────────────────────────
+    AI_AGENT_URL   = "https://your-agent-api.com/v1/chat"   # TODO: 替换为实际 API 地址
+    AI_AGENT_TOKEN = "your-api-token-here"                   # TODO: 替换为实际 Token/Key
+    # 请求体字段名：发送用户消息的字段（如 "input" / "message" / "query" 等）
+    AI_AGENT_INPUT_FIELD = "input"                           # TODO: 根据 API 文档调整
+    # 响应体字段名：SSE data JSON 中携带文本的字段（如 "response" / "output" / "answer" 等）
+    AI_AGENT_OUTPUT_FIELD = "response"                       # TODO: 根据 API 文档调整
+    # 其他固定参数（如 agent_id、session_id 等，不需要的删掉）
+    AI_AGENT_EXTRA_PAYLOAD = {
+        # "agent_id": "your-agent-id",  # TODO: 如需要，填写 agent_id
+        # "session_id": "",             # TODO: 如需要，填写 session_id
+    }
+    # ──────────────────────────────────────────────
+
     start = time.perf_counter()
     try:
-        url = "https://maas-api.ai-yuanjing.com/openapi/v3/assistant/chat/completions"
         headers = {
-            "Content-Type": "text/event-stream",
-            "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjM4ODU1NjQxOTAwNTMwMDg2IiwidXNlclR5cGUiOjAsInVzZXJuYW1lIjoieHVnNTIiLCJuaWNrbmFtZSI6IuiuuOingiIsImJ1ZmZlclRpbWUiOjE3NzM3MjIwMDksImNyZWF0ZWRCeSI6IjM4ODU1NjQxOTAwNTMwMDg2IiwidGVuYW50SUQiOiIzODg1NTY0MTkwMDUzMDA4NiIsInN1YlVzZXJuYW1lIjoieHVnNTIiLCJzdWJOaWNrbmFtZSI6IuiuuOingiIsImV4cCI6MTc3Mzc3MjQwOSwianRpIjoiZWIyOTIwMmItMGYxZS00ODc2LWE4ZDUtM2I5ZmU4N2E2NGU3IiwiaWF0IjoxNzczNzE0Njg5LCJpc3MiOiIzODg1NTY0MTkwMDUzMDA4NiIsIm5iZiI6MTc3MzcxNDY4OSwic3ViIjoid2ViIn0.OPjpdfod3-L6n1WJc4yN3de9m_-RSDfQUkiuabx8OD8"
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {AI_AGENT_TOKEN}"
         }
         payload = {
-            "agent_id": "5e64509e-6ec4-4c1c-bed6-827e3849333e",
-            "session_id": "",
-            "input": message,
+            AI_AGENT_INPUT_FIELD: message,
             "stream": True,
-            "upload_file_url": ""
+            **AI_AGENT_EXTRA_PAYLOAD
         }
-        resp = requests.post(url, json=payload, headers=headers, stream=True)
+        resp = requests.post(AI_AGENT_URL, json=payload, headers=headers, stream=True)
         resp.raise_for_status()
         end = time.perf_counter()
         logger.info(f"ai_agent Time init: {end-start}s")
@@ -97,8 +108,8 @@ def ai_agent_response(message,nerfreal:BaseReal):
                                     import json
                                     try:
                                         data = json.loads(data_str)
-                                        if 'response' in data:
-                                            msg = data['response']
+                                        if AI_AGENT_OUTPUT_FIELD in data:
+                                            msg = data[AI_AGENT_OUTPUT_FIELD]
                                             if msg is not None:
                                                 if first:
                                                     end = time.perf_counter()
@@ -132,3 +143,4 @@ def ai_agent_response(message,nerfreal:BaseReal):
 
     except requests.exceptions.RequestException as e:
         logger.error(f"请求出错：{e}")
+   

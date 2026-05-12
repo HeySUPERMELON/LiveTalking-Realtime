@@ -378,23 +378,28 @@ class BaseReal:
                     vircam = pyvirtualcam.Camera(width=width, height=height, fps=25, fmt=pyvirtualcam.PixelFormat.BGR,print_fps=True)
                 vircam.send(combine_frame)
             else: #webrtc
+                # 音视频帧原子化入队，确保在同一个 event loop tick 内完成
+                # 避免音频和视频 track 的入队顺序被其他协程打乱导致漂移
                 image = combine_frame
-                new_frame = VideoFrame.from_ndarray(image, format="bgr24")
-                asyncio.run_coroutine_threadsafe(video_track._queue.put((new_frame,None)), loop)
-            self.record_video_data(combine_frame)
+                video_frame = VideoFrame.from_ndarray(image, format="bgr24")
 
-            for audio_frame in audio_frames:
-                frame,type,eventpoint = audio_frame
-                frame = (frame * 32767).astype(np.int16)
+                audio_packets = []
+                for audio_frame in audio_frames:
+                    frame, type, eventpoint = audio_frame
+                    frame = (frame * 32767).astype(np.int16)
+                    af = AudioFrame(format='s16', layout='mono', samples=frame.shape[0])
+                    af.planes[0].update(frame.tobytes())
+                    af.sample_rate = 16000
+                    audio_packets.append((af, eventpoint))
+                    self.record_audio_data(frame)
 
-                if self.opt.transport=='virtualcam':
-                    audio_tmp.put(frame.tobytes()) #TODO
-                else: #webrtc
-                    new_frame = AudioFrame(format='s16', layout='mono', samples=frame.shape[0])
-                    new_frame.planes[0].update(frame.tobytes())
-                    new_frame.sample_rate=16000
-                    asyncio.run_coroutine_threadsafe(audio_track._queue.put((new_frame,eventpoint)), loop)
-                self.record_audio_data(frame)
+                async def _put_av_sync(vf, aps):
+                    await video_track._queue.put((vf, None))
+                    for af, ep in aps:
+                        await audio_track._queue.put((af, ep))
+
+                asyncio.run_coroutine_threadsafe(_put_av_sync(video_frame, audio_packets), loop)
+                self.record_video_data(combine_frame)
             if self.opt.transport=='virtualcam':
                 vircam.sleep_until_next_frame()
         if self.opt.transport=='virtualcam':

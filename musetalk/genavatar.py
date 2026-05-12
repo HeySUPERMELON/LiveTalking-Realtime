@@ -369,13 +369,25 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     # Set computing device
-    device = torch.device(f"cuda:{args.gpu_id}" if torch.cuda.is_available() else "cpu")
+    if torch.cuda.is_available():
+        device = torch.device(f"cuda:{args.gpu_id}")
+    elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        device = torch.device("mps")
+    else:
+        device = torch.device("cpu")
+    print(f"Using device: {device}")
 
     # Load model weights
     vae, unet, pe = load_all_model(
-        device=device
+        unet_model_path=os.path.join("models", "musetalkV15", "unet.pth"),
+        vae_type="sd-vae",
+        unet_config=os.path.join("models", "musetalkV15", "musetalk.json"),
+        device=device,
     )
-    vae.vae = vae.vae.half().to(device)
+    if device.type == "cuda":
+        vae.vae = vae.vae.half().to(device)
+    else:
+        vae.vae = vae.vae.float().to(device)
     # Initialize face parser with configurable parameters based on version
     if args.version == "v15":
         fp = FaceParsing(

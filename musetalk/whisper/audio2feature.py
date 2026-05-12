@@ -9,7 +9,7 @@ from transformers import WhisperModel
 import torch
 sys.path.append("..")
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda" if torch.cuda.is_available() else ("mps" if hasattr(torch.backends, "mps") and torch.backends.mps.is_available() else "cpu"))
 weight_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
 class Audio2Feature():
     def __init__(self, 

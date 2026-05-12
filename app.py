@@ -70,7 +70,7 @@ def build_nerfreal(sessionid:int)->BaseReal:
     if opt.model == 'wav2lip':
         from lipreal import LipReal
         nerfreal = LipReal(opt,model,avatar)
-    elif opt.model == 'musetalk':
+    if opt.model == 'musetalk':
         from musereal import MuseReal
         nerfreal = MuseReal(opt,model,avatar)
     # elif opt.model == 'ernerf':
@@ -153,10 +153,9 @@ async def human(request):
             nerfreals[sessionid].put_msg_txt(params['text'])
         elif params['type']=='chat':
             if llm_type == 'llm':
-                asyncio.get_event_loop().run_in_executor(None, llm_response, params['text'],nerfreals[sessionid])       
-            elif llm_type == 'ai_agent':
-                asyncio.get_event_loop().run_in_executor(None, ai_agent_response, params['text'],nerfreals[sessionid])                  
-            #nerfreals[sessionid].put_msg_txt(res)
+                asyncio.get_event_loop().run_in_executor(None, llm_response, params['text'],nerfreals[sessionid])
+            else:
+                asyncio.get_event_loop().run_in_executor(None, ai_agent_response, params['text'],nerfreals[sessionid])
 
         return web.Response(
             content_type="application/json",
@@ -333,7 +332,7 @@ if __name__ == '__main__':
     #musetalk opt
     parser.add_argument('--avatar_id', type=str, default='avator_1', help="define which avatar in data/avatars")
     #parser.add_argument('--bbox_shift', type=int, default=5)
-    parser.add_argument('--batch_size', type=int, default=16, help="infer batch")
+    parser.add_argument('--batch_size', type=int, default=4, help="infer batch (GPU≥20GB推荐20, MPS/CPU推荐4)")
 
     parser.add_argument('--customvideo_config', type=str, default='', help="custom action json")
 
@@ -351,7 +350,7 @@ if __name__ == '__main__':
 
     parser.add_argument('--max_session', type=int, default=1)  #multi session count
     parser.add_argument('--listenport', type=int, default=8010, help="web listen port")
-    parser.add_argument('--llm_type', type=str, default="llm") #llm or ai_agent
+    parser.add_argument('--llm_type', type=str, default="ai_agent") #llm ai_agent
 
     opt = parser.parse_args()
     #app.config.from_object(opt)
@@ -369,10 +368,11 @@ if __name__ == '__main__':
     #     avatar = load_avatar(opt) 
     if opt.model == 'musetalk':
         from musereal import MuseReal,load_model,load_avatar,warm_up
+        logger.info(f"[MuseReal] 使用 MuseTalk，batch_size={opt.batch_size}")
         logger.info(opt)
         model = load_model()
-        avatar = load_avatar(opt.avatar_id) 
-        warm_up(opt.batch_size,model)      
+        avatar = load_avatar(opt.avatar_id)
+        warm_up(opt.batch_size,model)
     elif opt.model == 'wav2lip':
         from lipreal import LipReal,load_model,load_avatar,warm_up
         logger.info(opt)

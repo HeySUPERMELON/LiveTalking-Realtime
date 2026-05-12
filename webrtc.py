@@ -28,11 +28,21 @@ import fractions
 import numpy as np
 
 AUDIO_PTIME = 0.020  # 20ms audio packetization
+VIDEO_PTIME = 0.040 #1 / 25  # 25fps video
 VIDEO_CLOCK_RATE = 90000
-VIDEO_PTIME = 0.040 #1 / 25  # 30fps
 VIDEO_TIME_BASE = fractions.Fraction(1, VIDEO_CLOCK_RATE)
 SAMPLE_RATE = 16000
 AUDIO_TIME_BASE = fractions.Fraction(1, SAMPLE_RATE)
+
+# 全局共享时间基准，确保音视频严格同步
+_shared_start_time = None
+
+def get_shared_start_time():
+    """获取音视频共享的起始时间戳，确保两个 track 从同一时刻开始计时"""
+    global _shared_start_time
+    if _shared_start_time is None:
+        _shared_start_time = time.time()
+    return _shared_start_time
 
 #from aiortc.contrib.media import MediaPlayer, MediaRelay
 #from aiortc.rtcrtpsender import RTCRtpSender
@@ -75,17 +85,17 @@ class PlayerStreamTrack(MediaStreamTrack):
                 self._timestamp += int(VIDEO_PTIME * VIDEO_CLOCK_RATE)
                 self.current_frame_count += 1
                 wait = self._start + self.current_frame_count * VIDEO_PTIME - time.time()
-                # wait = self.timelist[0] + len(self.timelist)*VIDEO_PTIME - time.time()               
+                # wait = self.timelist[0] + len(self.timelist)*VIDEO_PTIME - time.time()
                 if wait>0:
                     await asyncio.sleep(wait)
                 # if len(self.timelist)>=100:
                 #     self.timelist.pop(0)
                 # self.timelist.append(time.time())
             else:
-                self._start = time.time()
+                self._start = get_shared_start_time()
                 self._timestamp = 0
                 self.timelist.append(self._start)
-                mylogger.info('video start:%f',self._start)
+                mylogger.info('video start:%f (shared)',self._start)
             return self._timestamp, VIDEO_TIME_BASE
         else: #audio
             if hasattr(self, "_timestamp"):
@@ -101,10 +111,10 @@ class PlayerStreamTrack(MediaStreamTrack):
                 #     self.timelist.pop(0)
                 # self.timelist.append(time.time())
             else:
-                self._start = time.time()
+                self._start = get_shared_start_time()
                 self._timestamp = 0
                 self.timelist.append(self._start)
-                mylogger.info('audio start:%f',self._start)
+                mylogger.info('audio start:%f (shared)',self._start)
             return self._timestamp, AUDIO_TIME_BASE
 
     async def recv(self) -> Union[Frame, Packet]:
