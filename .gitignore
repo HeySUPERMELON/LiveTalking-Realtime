@@ -2,7 +2,6 @@ __pycache__/
 build/
 *.egg-info/
 *.so
-*.mp4
 
 tmp*
 trial*/
@@ -12,7 +11,7 @@ data_utils/face_tracking/3DMM/*
 data_utils/face_parsing/79999_iter.pth
 
 pretrained
-*.mp4
+# *.mp4
 .DS_Store
 workspace/log_ngp.txt
 .idea
