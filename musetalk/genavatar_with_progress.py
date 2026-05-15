@@ -15,6 +15,7 @@ import glob
 import json
 import os
 import pickle
+import platform
 import shutil
 import sys
 import time
@@ -122,15 +123,46 @@ def main():
 
     log_stage("Stage 1/6: 加载模型")
 
-    # 1a. DWPose (mmpose)
+    # 1a. 面部关键点模型
     t0 = time.time()
-    print("  [1/4] 加载 DWPose (mmpose) ...", end=" ", flush=True)
-    from mmpose.apis import inference_topdown, init_model
-    from mmpose.structures import merge_data_samples
+    _IS_LINUX = (platform.system() == "Linux")
 
-    config_file = os.path.join(current_dir, 'utils/dwpose/rtmpose-l_8xb32-270e_coco-ubody-wholebody-384x288.py')
-    checkpoint_file = os.path.join(project_root, 'models/dwpose/dw-ll_ucoco_384.pth')
-    pose_model = init_model(config_file, checkpoint_file, device=device)
+    if _IS_LINUX:
+        # --- Linux: 使用 insightface ---
+        print("  [1/4] 加载 insightface (Linux) ...", end=" ", flush=True)
+        import insightface
+        from insightface.app import FaceAnalysis
+        pose_app = FaceAnalysis(
+            name='buffalo_l',
+            providers=['CUDAExecutionProvider', 'CPUExecutionProvider']
+        )
+        pose_app.prepare(
+            ctx_id=0 if device.type == 'cuda' else -1,
+            det_size=(640, 640)
+        )
+        # 定义一个统一的获取 68 点的闭包
+        def _get_face_landmarks_68(img_bgr):
+            faces = pose_app.get(img_bgr)
+            if not faces:
+                return None
+            face = max(faces, key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1]))
+            return face.landmark_2d_106[:68].astype(np.int32)
+    else:
+        # --- Windows/macOS: 使用 DWPose (mmpose) ---
+        print("  [1/4] 加载 DWPose (mmpose) ...", end=" ", flush=True)
+        from mmpose.apis import inference_topdown, init_model
+        from mmpose.structures import merge_data_samples
+
+        config_file = os.path.join(current_dir, 'utils/dwpose/rtmpose-l_8xb32-270e_coco-ubody-wholebody-384x288.py')
+        checkpoint_file = os.path.join(project_root, 'models/dwpose/dw-ll_ucoco_384.pth')
+        pose_model = init_model(config_file, checkpoint_file, device=device)
+
+        def _get_face_landmarks_68(img_bgr):
+            results = inference_topdown(pose_model, img_bgr)
+            results = merge_data_samples(results)
+            keypoints = results.pred_instances.keypoints
+            return keypoints[0][23:91].astype(np.int32)
+
     print(f"done ({time.time()-t0:.1f}s)")
 
     # 1b. Face Detection (S3FD)
@@ -236,20 +268,17 @@ def main():
 
     t_start = time.time()
     for i, frame in enumerate(frames):
-        # 关键点检测 (DWPose)
-        results = inference_topdown(pose_model, frame)
-        results = merge_data_samples(results)
-        keypoints = results.pred_instances.keypoints
-        face_land_mark = keypoints[0][23:91].astype(np.int32)
+        # 面部关键点检测（insightface 或 DWPose，由 _get_face_landmarks_68 统一封装）
+        face_land_mark = _get_face_landmarks_68(frame)
 
-        # 人脸检测 (S3FD)
-        bbox_list = fa.get_detections_for_batch(frame[np.newaxis, ...])
-
-        f = bbox_list[0]
-        if f is None:
+        if face_land_mark is None:
             coord_list.append(coord_placeholder)
             error_count += 1
         else:
+            # 人脸检测 (S3FD) — 仍用于兜底 bbox
+            bbox_list = fa.get_detections_for_batch(frame[np.newaxis, ...])
+            f = bbox_list[0]
+
             half_face_coord = face_land_mark[29]
             range_minus = (face_land_mark[30] - face_land_mark[29])[1]
             range_plus = (face_land_mark[29] - face_land_mark[28])[1]
@@ -268,7 +297,11 @@ def main():
             )
             x1, y1, x2, y2 = f_landmark
             if y2 - y1 <= 0 or x2 - x1 <= 0 or x1 < 0:
-                coord_list.append(f)
+                if f is not None:
+                    coord_list.append(f)
+                else:
+                    coord_list.append(coord_placeholder)
+                    error_count += 1
             else:
                 coord_list.append(f_landmark)
 
