@@ -46,7 +46,7 @@ class UNet():
                 self.device = torch.device("mps")
             else:
                 self.device = torch.device("cpu")
-        weights = torch.load(model_path, map_location=self.device)
+        weights = torch.load(model_path, map_location=self.device, weights_only=False)
         self.model.load_state_dict(weights)
         if use_float16:
             self.model = self.model.half()

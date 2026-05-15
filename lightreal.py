@@ -70,7 +70,7 @@ def load_avatar(avatar_id):
     coords_path = f"{avatar_path}/coords.pkl" 
     
     model = Model(6, 'hubert').to(device)  # 假设Model是你自定义的类
-    model.load_state_dict(torch.load(f"{avatar_path}/ultralight.pth"))
+    model.load_state_dict(torch.load(f"{avatar_path}/ultralight.pth", weights_only=False))
     
     with open(coords_path, 'rb') as f:
         coord_list_cycle = pickle.load(f)

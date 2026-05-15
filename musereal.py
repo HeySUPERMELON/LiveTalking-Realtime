@@ -85,7 +85,7 @@ def load_avatar(avatar_id):
     mask_coords_path = f"{avatar_path}/mask_coords.pkl"
 
     logger.info(f"[MuseReal] 加载 avatar: {avatar_id}")
-    input_latent_list_cycle = torch.load(latents_out_path)
+    input_latent_list_cycle = torch.load(latents_out_path, weights_only=False)
     with open(coords_path, 'rb') as f:
         coord_list_cycle = pickle.load(f)
     input_img_list = glob.glob(os.path.join(full_imgs_path, '*.[jpJP][pnPN]*[gG]'))
