@@ -41,6 +41,14 @@ from fractions import Fraction
 from ttsreal import EdgeTTS,SovitsTTS,XTTS,CosyVoiceTTS,FishTTS,TencentTTS,DoubaoTTS,IndexTTS2,AzureTTS
 from logger import logger
 
+# 实时画面水印配置
+WATERMARK_TEXT    = ""
+WATERMARK_POS     = (10, 20)          # 位置 (x, y)
+WATERMARK_FONT    = cv2.FONT_HERSHEY_SIMPLEX
+WATERMARK_SCALE   = 0.3               # 字体大小
+WATERMARK_COLOR   = (128, 128, 128)    # BGR 颜色
+WATERMARK_THICK   = 1                  # 线条粗细
+
 from tqdm import tqdm
 def read_imgs(img_list):
     frames = []
@@ -371,7 +379,8 @@ class BaseReal:
                 else:
                     combine_frame = current_frame
 
-            cv2.putText(combine_frame, "LiveTalking", (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.3, (128,128,128), 1)
+            if WATERMARK_TEXT:
+                cv2.putText(combine_frame, WATERMARK_TEXT, WATERMARK_POS, WATERMARK_FONT, WATERMARK_SCALE, WATERMARK_COLOR, WATERMARK_THICK)
             if self.opt.transport=='virtualcam':
                 if vircam==None:
                     height, width,_= combine_frame.shape

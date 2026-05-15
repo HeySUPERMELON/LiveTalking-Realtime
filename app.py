@@ -67,10 +67,11 @@ def randN(N)->int:
 
 def build_nerfreal(sessionid:int)->BaseReal:
     opt.sessionid=sessionid
+    logger.info('build_nerfreal: model=%s, sessionid=%d', opt.model, sessionid)
     if opt.model == 'wav2lip':
         from lipreal import LipReal
         nerfreal = LipReal(opt,model,avatar)
-    if opt.model == 'musetalk':
+    elif opt.model == 'musetalk':
         from musereal import MuseReal
         nerfreal = MuseReal(opt,model,avatar)
     # elif opt.model == 'ernerf':
@@ -79,6 +80,8 @@ def build_nerfreal(sessionid:int)->BaseReal:
     elif opt.model == 'ultralight':
         from lightreal import LightReal
         nerfreal = LightReal(opt,model,avatar)
+    else:
+        raise ValueError(f"Unknown model '{opt.model}'. Supported models: musetalk, wav2lip, ultralight")
     return nerfreal
 
 #@app.route('/offer', methods=['POST'])
@@ -385,6 +388,8 @@ if __name__ == '__main__':
         model = load_model(opt)
         avatar = load_avatar(opt.avatar_id)
         warm_up(opt.batch_size,avatar,160)
+    else:
+        raise ValueError(f"Unknown model '{opt.model}'. Supported models: musetalk, wav2lip, ultralight")
 
     # if opt.transport=='rtmp':
     #     thread_quit = Event()

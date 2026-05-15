@@ -1,7 +1,16 @@
 from os import listdir, path
+import cv2
+
+# 数字人水印配置
+WATERMARK_TEXT    = "LiveTalking"
+WATERMARK_POS     = (10, 20)
+WATERMARK_FONT    = cv2.FONT_HERSHEY_SIMPLEX
+WATERMARK_SCALE   = 0.3
+WATERMARK_COLOR   = (128, 128, 128)
+WATERMARK_THICK   = 1
+
 import numpy as np
-import scipy, cv2, os, sys, argparse
-import json, subprocess, random, string
+import scipy, os, sys, argparse, json, subprocess, random, string
 from tqdm import tqdm
 from glob import glob
 import torch
@@ -36,7 +45,8 @@ def video2imgs(vid_path, save_path, ext = '.png',cut_frame = 10000000):
             break
         ret, frame = cap.read()
         if ret:
-            cv2.putText(frame, "LiveTalking", (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.3, (128,128,128), 1)
+            if WATERMARK_TEXT:
+                cv2.putText(frame, WATERMARK_TEXT, WATERMARK_POS, WATERMARK_FONT, WATERMARK_SCALE, WATERMARK_COLOR, WATERMARK_THICK)
             cv2.imwrite(f"{save_path}/{count:08d}.png", frame)
             count += 1
         else:

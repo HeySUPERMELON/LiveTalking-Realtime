@@ -23,6 +23,15 @@ import cv2
 import numpy as np
 import torch
 
+
+# 数字人视频水印配置
+WATERMARK_TEXT    = ""
+WATERMARK_POS     = (10, 20)
+WATERMARK_FONT    = cv2.FONT_HERSHEY_SIMPLEX
+WATERMARK_SCALE   = 0.3
+WATERMARK_COLOR   = (128, 128, 128)
+WATERMARK_THICK   = 1
+
 # ──── 工具函数 ──────────────────────────────────────────────────
 
 def is_video_file(file_path):
@@ -43,8 +52,9 @@ def video2imgs(vid_path, save_path, ext='.png', cut_frame=10000000):
         ret, frame = cap.read()
         if not ret:
             break
-        cv2.putText(frame, "LiveTalking", (10, 20),
-                     cv2.FONT_HERSHEY_SIMPLEX, 0.3, (128, 128, 128), 1)
+        if WATERMARK_TEXT:
+            cv2.putText(frame, WATERMARK_TEXT, WATERMARK_POS,
+                         WATERMARK_FONT, WATERMARK_SCALE, WATERMARK_COLOR, WATERMARK_THICK)
         cv2.imwrite(f"{save_path}/{count:08d}.png", frame)
         count += 1
     cap.release()

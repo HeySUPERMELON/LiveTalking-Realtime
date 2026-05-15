@@ -103,11 +103,11 @@ fi
 echo ""
 echo "=================================================="
 echo " 启动配置："
-echo "  模型: musetalk_v15"
+echo "  模型: musetalk"
 echo "  Avatar: $AVATAR_ID"
 echo "  Batch Size: $BATCH_SIZE"
 echo "  传输模式: webrtc（无需 SRS，浏览器直连）"
-echo "  LLM 类型: exhibition_agent（展厅智能体）"
+echo "  LLM 类型: ai_agent（展厅智能体）"
 echo "  监听端口: 8010"
 echo "=================================================="
 echo ""
@@ -120,12 +120,12 @@ echo ""
 
 # ──── 启动服务 ────────────────────────────────────────────────
 PYTHONPATH="$PROJECT_DIR:$PYTHONPATH" $CONDA_PYTHON app.py \
-  --model musetalk_v15 \
+  --model musetalk \
   --avatar_id "$AVATAR_ID" \
   --batch_size "$BATCH_SIZE" \
   --fps 50 \
   --tts edgetts \
-  --llm_type exhibition_agent \
+  --llm_type ai_agent \
   --transport webrtc \
   --listenport 8010 \
   $EXTRA_ARGS

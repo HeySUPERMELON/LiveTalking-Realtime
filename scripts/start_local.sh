@@ -79,7 +79,7 @@ echo "[启动] 数字人服务（MPS 模式，batch_size=4）..."
 echo ""
 
 PYTHONPATH="$PROJECT_DIR:$PYTHONPATH" "$CONDA_PYTHON" app.py \
-  --model musetalk_v15 \
+  --model musetalk \
   --avatar_id "$AVATAR_ID" \
   --batch_size 4 \
   --tts edgetts \
