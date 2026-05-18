@@ -16,7 +16,6 @@
 ###############################################################################
 
 import time
-import logging
 import numpy as np
 
 import queue
@@ -25,20 +24,10 @@ from queue import Queue
 from baseasr import BaseASR
 from musetalk.whisper.audio2feature import Audio2Feature
 
-logger = logging.getLogger(__name__)
-
-# 音频上下文窗口大小（单位：whisper 帧）。
-# 硬约束: (left + right) 必须等于 4，否则 reshape 后维度不等于 50×384，
-#         UNet cross-attention 会因输入形状错误而崩溃（嘴形完全不动）。
-# 可选值: [2,2] 默认 | [1,3] 更前瞻 | [3,1] 更回溯 | [4,0] 纯回溯 | [0,4] 纯前瞻
-AUDIO_FEAT_LENGTH = [1, 3]  # 100ms 回溯 + 200ms 前瞻，帮助模型预判嘴形
-
-
 class MuseASR(BaseASR):
     def __init__(self, opt, parent,audio_processor:Audio2Feature):
         super().__init__(opt,parent)
         self.audio_processor = audio_processor
-        logger.info(f"[MuseASR] audio_feat_length={AUDIO_FEAT_LENGTH} (回溯{AUDIO_FEAT_LENGTH[0]*2*10}ms + 前瞻{AUDIO_FEAT_LENGTH[1]*2*10}ms)")
 
     def run_step(self):
         ############################################## extract audio feature ##############################################
@@ -53,13 +42,7 @@ class MuseASR(BaseASR):
 
         inputs = np.concatenate(self.frames) # [N * chunk]
         whisper_feature = self.audio_processor.audio2feat(inputs)
-        whisper_chunks = self.audio_processor.feature2chunks(
-            feature_array=whisper_feature,
-            fps=self.fps/2,
-            batch_size=self.batch_size,
-            start=self.stride_left_size/2,
-            audio_feat_length=AUDIO_FEAT_LENGTH,
-        )
+        whisper_chunks = self.audio_processor.feature2chunks(feature_array=whisper_feature,fps=self.fps/2,batch_size=self.batch_size,start=self.stride_left_size/2 )
         #print(f"whisper_chunks len:{len(whisper_chunks)},self.audio_feats len:{len(self.audio_feats)},self.output_queue len:{self.output_queue.qsize()}")
         #self.audio_feats = self.audio_feats[-(self.stride_left_size + self.stride_right_size):]
         self.feat_queue.put(whisper_chunks)
