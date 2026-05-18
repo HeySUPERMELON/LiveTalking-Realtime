@@ -266,23 +266,24 @@ def create_dir(dir_path):
 
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(current_dir)
 
 
 def create_musetalk_human(file, avatar_id):
-    # 保存文件设置 可以不动
-    save_path = os.path.join(current_dir, f'./data/avatars/{avatar_id}')
-    save_full_path = os.path.join(current_dir, f'./data/avatars/{avatar_id}/full_imgs')
+    # 保存文件设置 — 统一保存到项目根目录下的 data/avatars/
+    save_path = os.path.join(project_root, f'data/avatars/{avatar_id}')
+    save_full_path = os.path.join(project_root, f'data/avatars/{avatar_id}/full_imgs')
     create_dir(save_path)
     create_dir(save_full_path)
-    mask_out_path = os.path.join(current_dir, f'./data/avatars/{avatar_id}/mask')
+    mask_out_path = os.path.join(project_root, f'data/avatars/{avatar_id}/mask')
     create_dir(mask_out_path)
 
     # 模型
-    mask_coords_path = os.path.join(current_dir, f'{save_path}/mask_coords.pkl')
-    coords_path = os.path.join(current_dir, f'{save_path}/coords.pkl')
-    latents_out_path = os.path.join(current_dir, f'{save_path}/latents.pt')
+    mask_coords_path = os.path.join(project_root, f'data/avatars/{avatar_id}/mask_coords.pkl')
+    coords_path = os.path.join(project_root, f'data/avatars/{avatar_id}/coords.pkl')
+    latents_out_path = os.path.join(project_root, f'data/avatars/{avatar_id}/latents.pt')
 
-    with open(os.path.join(current_dir, f'{save_path}/avator_info.json'), "w") as f:
+    with open(os.path.join(save_path, 'avator_info.json'), "w") as f:
         json.dump({
             "avatar_id": avatar_id,
             "video_path": file,

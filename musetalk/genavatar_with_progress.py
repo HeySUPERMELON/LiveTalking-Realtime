@@ -111,7 +111,7 @@ def main():
     current_dir = os.path.dirname(os.path.abspath(__file__))
     # project_root: LiveTalking-Realtime/  (current_dir 的上一级)
     project_root = os.path.dirname(current_dir)
-    save_path = os.path.join(current_dir, f'./data/avatars/{args.avatar_id}')
+    save_path = os.path.join(project_root, f'data/avatars/{args.avatar_id}')
 
     coord_placeholder = (0.0, 0.0, 0.0, 0.0)
 
