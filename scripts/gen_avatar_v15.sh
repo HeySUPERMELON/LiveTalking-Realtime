@@ -108,8 +108,8 @@ PYTHONPATH="$PROJECT_DIR:$PYTHONPATH" "$CONDA_PYTHON" \
   --avatar_id "$AVATAR_ID" \
   --gpu_id "$GPU_ID" \
   --version v15 \
-  --bbox_shift 0 \
-  --extra_margin 10 \
+  --bbox_shift 5 \
+  --extra_margin 25 \
   --parsing_mode jaw \
   --left_cheek_width 90 \
   --right_cheek_width 90

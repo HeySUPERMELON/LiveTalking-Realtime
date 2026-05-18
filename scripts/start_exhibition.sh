@@ -90,8 +90,11 @@ fi
 # ──── 启动参数 ─────────────────────────────────────────────────
 # 根据设备自动选择 batch_size
 BATCH_SIZE=16  # 默认（12GB GPU）
-if $CONDA_PYTHON -c "import torch; m=torch.cuda.get_device_properties(0).total_memory//1024//1024//1024; exit(0 if m>=20 else 1)" 2>/dev/null; then
-  BATCH_SIZE=20  # 20GB+ GPU (RTX 3090/4090)
+if $CONDA_PYTHON -c "import torch; m=torch.cuda.get_device_properties(0).total_memory//1024//1024//1024; exit(0 if m>=24 else 1)" 2>/dev/null; then
+  BATCH_SIZE=24  # 24GB+ GPU (RTX 4090)
+  echo "[自动检测] 大显存 GPU (4090)，batch_size=24"
+elif $CONDA_PYTHON -c "import torch; m=torch.cuda.get_device_properties(0).total_memory//1024//1024//1024; exit(0 if m>=20 else 1)" 2>/dev/null; then
+  BATCH_SIZE=20  # 20GB+ GPU (RTX 3090)
   echo "[自动检测] 大显存 GPU，batch_size=20"
 elif $CONDA_PYTHON -c "import torch; exit(0 if not torch.cuda.is_available() else 1)" 2>/dev/null; then
   BATCH_SIZE=4  # MPS / CPU — 降低 batch_size 避免 OOM

@@ -16,6 +16,7 @@
 ###############################################################################
 
 import time
+import logging
 import numpy as np
 
 import queue
@@ -24,10 +25,18 @@ from queue import Queue
 from baseasr import BaseASR
 from musetalk.whisper.audio2feature import Audio2Feature
 
+logger = logging.getLogger(__name__)
+
+# 音频上下文窗口大小（单位：whisper 帧），越大嘴形越准确但推理越重
+# 默认 [2,2]=200ms，提升到 [3,3]=300ms 以改善嘴形精度
+AUDIO_FEAT_LENGTH = [3, 3]
+
+
 class MuseASR(BaseASR):
     def __init__(self, opt, parent,audio_processor:Audio2Feature):
         super().__init__(opt,parent)
         self.audio_processor = audio_processor
+        logger.info(f"[MuseASR] audio_feat_length={AUDIO_FEAT_LENGTH} ({(AUDIO_FEAT_LENGTH[0]+AUDIO_FEAT_LENGTH[1]+1)*2*10}ms 上下文窗口)")
 
     def run_step(self):
         ############################################## extract audio feature ##############################################
@@ -36,16 +45,19 @@ class MuseASR(BaseASR):
             audio_frame,type,eventpoint = self.get_audio_frame()
             self.frames.append(audio_frame)
             self.output_queue.put((audio_frame,type,eventpoint))
-        
+
         if len(self.frames) <= self.stride_left_size + self.stride_right_size:
             return
-        
+
         inputs = np.concatenate(self.frames) # [N * chunk]
         whisper_feature = self.audio_processor.audio2feat(inputs)
-        # for feature in whisper_feature:
-        #     self.audio_feats.append(feature)        
-        #print(f"processing audio costs {(time.time() - start_time) * 1000}ms, inputs shape:{inputs.shape} whisper_feature len:{len(whisper_feature)}")
-        whisper_chunks = self.audio_processor.feature2chunks(feature_array=whisper_feature,fps=self.fps/2,batch_size=self.batch_size,start=self.stride_left_size/2 )
+        whisper_chunks = self.audio_processor.feature2chunks(
+            feature_array=whisper_feature,
+            fps=self.fps/2,
+            batch_size=self.batch_size,
+            start=self.stride_left_size/2,
+            audio_feat_length=AUDIO_FEAT_LENGTH,
+        )
         #print(f"whisper_chunks len:{len(whisper_chunks)},self.audio_feats len:{len(self.audio_feats)},self.output_queue len:{self.output_queue.qsize()}")
         #self.audio_feats = self.audio_feats[-(self.stride_left_size + self.stride_right_size):]
         self.feat_queue.put(whisper_chunks)
