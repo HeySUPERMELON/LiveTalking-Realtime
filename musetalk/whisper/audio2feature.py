@@ -22,7 +22,8 @@ AUDIO_RMS_TARGET = 0.05
 # 预加重滤波 — 增强高频成分（辅音：f/s/p/b/t/d），让唇形特征更显著
 #   0.0 = 关闭，0.95-0.97 = 标准值（语音处理常用 0.97）
 #   原理：y[n] = x[n] - α·x[n-1]，提升高频 → 辅音更突出 → 唇形动作更明确
-AUDIO_PRE_EMPHASIS = 0.97
+# ⚠️ 注意：部分场景开启后可能导致声音变差、口形完全不动！如果遇到此类问题，请关闭此选项
+AUDIO_PRE_EMPHASIS = 0.0
 
 device = torch.device("cuda" if torch.cuda.is_available() else ("mps" if hasattr(torch.backends, "mps") and torch.backends.mps.is_available() else "cpu"))
 weight_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
