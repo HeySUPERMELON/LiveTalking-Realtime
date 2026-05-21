@@ -3,6 +3,23 @@ import numpy as np
 import cv2
 import copy
 
+# ══════════════════════════════════════════════════════════════════
+# Mask 生成可配置参数（影响 avatar 生成阶段的 mask 质量）
+# 修改后需重新运行 gen_avatar_v15.sh 才能生效
+# ══════════════════════════════════════════════════════════════════
+
+# 上边界比例：只保留面部下 N% 的 mask（嘴部区域）
+#   0.5 = 原始默认（保留下半脸），0.4 = 保留更多上唇区域
+#   降低此值 → 包含更多上唇 → 上唇动作更完整
+#   但太低（<0.3）会导致眼睛区域也被混合，出现闪烁
+UPPER_BOUNDARY_RATIO = 0.4
+
+# 高斯模糊核系数：控制 mask 边缘的平滑度
+#   原始 get_image 用 0.05，get_image_prepare_material 用 0.1
+#   降低 → 边缘更锐利 → 嘴形更明确但可能有接缝
+#   升高 → 边缘更平滑 → 嘴形稍模糊但过渡更自然
+BLUR_KERNEL_RATIO = 0.08
+
 
 def get_crop_box(box, expand):
     x, y, x1, y1 = box
@@ -32,7 +49,7 @@ def face_seg(image, mode="raw", fp=None):
     return seg_image
 
 
-def get_image(image, face, face_box, upper_boundary_ratio=0.5, expand=1.5, mode="raw", fp=None):
+def get_image(image, face, face_box, upper_boundary_ratio=None, expand=1.5, mode="raw", fp=None):
     """
     将裁剪的面部图像粘贴回原始图像，并进行一些处理。
 
@@ -40,13 +57,15 @@ def get_image(image, face, face_box, upper_boundary_ratio=0.5, expand=1.5, mode=
         image (numpy.ndarray): 原始图像（身体部分）。
         face (numpy.ndarray): 裁剪的面部图像。
         face_box (tuple): 面部边界框的坐标 (x, y, x1, y1)。
-        upper_boundary_ratio (float): 用于控制面部区域的保留比例。
+        upper_boundary_ratio (float): 用于控制面部区域的保留比例。None=使用全局常量。
         expand (float): 扩展因子，用于放大裁剪框。
-        mode: 融合mask构建方式 
+        mode: 融合mask构建方式
 
     Returns:
         numpy.ndarray: 处理后的图像。
     """
+    if upper_boundary_ratio is None:
+        upper_boundary_ratio = UPPER_BOUNDARY_RATIO
     # 将 numpy 数组转换为 PIL 图像
     body = Image.fromarray(image[:, :, ::-1])  # 身体部分图像(整张图)
     face = Image.fromarray(face[:, :, ::-1])  # 面部图像
@@ -78,7 +97,7 @@ def get_image(image, face, face_box, upper_boundary_ratio=0.5, expand=1.5, mode=
     
     
     # 对掩码进行高斯模糊，使边缘更平滑
-    blur_kernel_size = int(0.05 * ori_shape[0] // 2 * 2) + 1  # 计算模糊核大小
+    blur_kernel_size = int(BLUR_KERNEL_RATIO * ori_shape[0] // 2 * 2) + 1  # 计算模糊核大小
     mask_array = cv2.GaussianBlur(np.array(modified_mask_image), (blur_kernel_size, blur_kernel_size), 0)  # 高斯模糊
     #mask_array = np.array(modified_mask_image)
     mask_image = Image.fromarray(mask_array)  # 将模糊后的掩码转换回 PIL 图像
@@ -109,7 +128,9 @@ def get_image_blending(image, face, face_box, mask_array, crop_box):
     return body[:,:,::-1]
 
 
-def get_image_prepare_material(image, face_box, upper_boundary_ratio=0.5, expand=1.5, fp=None, mode="raw"):
+def get_image_prepare_material(image, face_box, upper_boundary_ratio=None, expand=1.5, fp=None, mode="raw"):
+    if upper_boundary_ratio is None:
+        upper_boundary_ratio = UPPER_BOUNDARY_RATIO
     body = Image.fromarray(image[:,:,::-1])
 
     x, y, x1, y1 = face_box
@@ -131,6 +152,6 @@ def get_image_prepare_material(image, face_box, upper_boundary_ratio=0.5, expand
     modified_mask_image = Image.new('L', ori_shape, 0)
     modified_mask_image.paste(mask_image.crop((0, top_boundary, width, height)), (0, top_boundary))
 
-    blur_kernel_size = int(0.1 * ori_shape[0] // 2 * 2) + 1
+    blur_kernel_size = int(BLUR_KERNEL_RATIO * ori_shape[0] // 2 * 2) + 1
     mask_array = cv2.GaussianBlur(np.array(modified_mask_image), (blur_kernel_size, blur_kernel_size), 0)
     return mask_array, crop_box

@@ -9,6 +9,21 @@ from transformers import WhisperModel
 import torch
 sys.path.append("..")
 
+# ══════════════════════════════════════════════════════════════════
+# 音频预处理可配置参数
+# ══════════════════════════════════════════════════════════════════
+# RMS 音量归一化 — 让 Whisper 收到音量一致的输入
+#   True  = 启用（推荐），False = 关闭
+#   目标 RMS 水平：Whisper 训练数据约 0.03-0.1
+#   过高会放大噪声，过低会让特征偏弱
+AUDIO_RMS_NORM = True
+AUDIO_RMS_TARGET = 0.05
+
+# 预加重滤波 — 增强高频成分（辅音：f/s/p/b/t/d），让唇形特征更显著
+#   0.0 = 关闭，0.95-0.97 = 标准值（语音处理常用 0.97）
+#   原理：y[n] = x[n] - α·x[n-1]，提升高频 → 辅音更突出 → 唇形动作更明确
+AUDIO_PRE_EMPHASIS = 0.97
+
 device = torch.device("cuda" if torch.cuda.is_available() else ("mps" if hasattr(torch.backends, "mps") and torch.backends.mps.is_available() else "cpu"))
 weight_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
 class Audio2Feature():
@@ -104,6 +119,26 @@ class Audio2Feature():
         return whisper_chunks
     
     def audio2feat(self, wav_data): #, weight_dtype=None
+        # ── 音频预处理 ──
+        wav_data = np.asarray(wav_data, dtype=np.float32)
+
+        # 1) 预加重滤波：增强高频（辅音），让唇形特征更显著
+        if AUDIO_PRE_EMPHASIS > 0:
+            emphasized = np.empty_like(wav_data)
+            emphasized[0] = wav_data[0]
+            emphasized[1:] = wav_data[1:] - AUDIO_PRE_EMPHASIS * wav_data[:-1]
+            wav_data = emphasized
+
+        # 2) RMS 归一化：让不同音量的语音产生一致的 Whisper 特征
+        if AUDIO_RMS_NORM:
+            rms = np.sqrt(np.mean(wav_data ** 2))
+            if rms > 1e-6:  # 避免除以零
+                wav_data = wav_data * (AUDIO_RMS_TARGET / rms)
+                # 防削波：归一化后可能超出 [-1, 1]
+                peak = np.max(np.abs(wav_data))
+                if peak > 1.0:
+                    wav_data = wav_data / peak
+
         input_feature = self.feature_extractor(
             wav_data,
             return_tensors="pt",
