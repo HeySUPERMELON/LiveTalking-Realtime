@@ -71,6 +71,9 @@ def build_nerfreal(sessionid:int)->BaseReal:
     if opt.model == 'wav2lip':
         from lipreal import LipReal
         nerfreal = LipReal(opt,model,avatar)
+    elif opt.model == 'wav2lip384':
+        from lipreal384 import LipReal384
+        nerfreal = LipReal384(opt,model,avatar)
     elif opt.model == 'musetalk':
         from musereal import MuseReal
         nerfreal = MuseReal(opt,model,avatar)
@@ -81,7 +84,7 @@ def build_nerfreal(sessionid:int)->BaseReal:
         from lightreal import LightReal
         nerfreal = LightReal(opt,model,avatar)
     else:
-        raise ValueError(f"Unknown model '{opt.model}'. Supported models: musetalk, wav2lip, ultralight")
+        raise ValueError(f"Unknown model '{opt.model}'. Supported models: musetalk, wav2lip, wav2lip384, ultralight")
     return nerfreal
 
 #@app.route('/offer', methods=['POST'])
@@ -382,6 +385,12 @@ if __name__ == '__main__':
         model = load_model("./models/wav2lip.pth")
         avatar = load_avatar(opt.avatar_id)
         warm_up(opt.batch_size,model,256)
+    elif opt.model == 'wav2lip384':
+        from lipreal384 import LipReal384,load_model as load_model_384,load_avatar as load_avatar_384,warm_up as warm_up_384
+        logger.info(opt)
+        model = load_model_384("./models/wav2lip384.pth")
+        avatar = load_avatar_384(opt.avatar_id)
+        warm_up_384(opt.batch_size,model)
     elif opt.model == 'ultralight':
         from lightreal import LightReal,load_model,load_avatar,warm_up
         logger.info(opt)
@@ -389,7 +398,7 @@ if __name__ == '__main__':
         avatar = load_avatar(opt.avatar_id)
         warm_up(opt.batch_size,avatar,160)
     else:
-        raise ValueError(f"Unknown model '{opt.model}'. Supported models: musetalk, wav2lip, ultralight")
+        raise ValueError(f"Unknown model '{opt.model}'. Supported models: musetalk, wav2lip, wav2lip384, ultralight")
 
     # if opt.transport=='rtmp':
     #     thread_quit = Event()
