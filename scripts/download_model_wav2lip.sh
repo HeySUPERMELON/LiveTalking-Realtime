@@ -33,24 +33,51 @@ else
   echo "  来源: LiveTalking 项目预训练权重"
   echo ""
 
-  # 方法1: 从 HuggingFace 下载（如果可用）
-  if command -v wget &>/dev/null; then
-    wget -c "https://huggingface.co/Nekochu/Wav2Lip/resolve/main/wav2lip_gan.pth" \
-      -O "$WAV2LIP_MODEL" 2>/dev/null || true
-  elif command -v curl &>/dev/null; then
-    curl -L -C - "https://huggingface.co/Nekochu/Wav2Lip/resolve/main/wav2lip_gan.pth" \
-      -o "$WAV2LIP_MODEL" 2>/dev/null || true
+  # 优先从魔搭 (ModelScope) 下载
+  DOWNLOADED=false
+  if command -v python3 &>/dev/null || command -v python &>/dev/null; then
+    echo "  尝试从魔搭 (ModelScope) 下载..."
+    PYTHON_CMD=$(command -v python3 || command -v python)
+    $PYTHON_CMD -c "
+import os
+try:
+    from modelscope import snapshot_download
+    model_dir = snapshot_download('xkzhou/Checkpoint', cache_dir='./models/wav2lip_cache', revision='v1.0.0')
+    import shutil
+    for f in os.listdir(model_dir):
+        if f.endswith('.pth'):
+            shutil.copy(os.path.join(model_dir, f), '$WAV2LIP_MODEL')
+            break
+    print('OK')
+except Exception as e:
+    print(f'FAIL: {e}')
+" 2>&1 | grep -q "OK" && DOWNLOADED=true || true
   fi
 
-  # 如果下载失败，给出手动下载指引
+  # 方法2: 从 HuggingFace 下载（如果魔搭下载失败）
+  if [ "$DOWNLOADED" = false ]; then
+    if command -v wget &>/dev/null; then
+      wget -c "https://huggingface.co/Nekochu/Wav2Lip/resolve/main/wav2lip_gan.pth" \
+        -O "$WAV2LIP_MODEL" 2>/dev/null && DOWNLOADED=true || true
+    elif command -v curl &>/dev/null; then
+      curl -L -C - "https://huggingface.co/Nekochu/Wav2Lip/resolve/main/wav2lip_gan.pth" \
+        -o "$WAV2LIP_MODEL" 2>/dev/null && DOWNLOADED=true || true
+    fi
+  fi
+
+  # 如果所有下载都失败，给出手动下载指引
   if [ ! -f "$WAV2LIP_MODEL" ] || [ ! -s "$WAV2LIP_MODEL" ]; then
     echo ""
     echo "⚠ 自动下载失败，请手动下载："
     echo ""
-    echo "  方式1 - HuggingFace:"
+    echo "  方式1 - 魔搭 (ModelScope):"
+    echo "    pip install modelscope"
+    echo "    python -c \"from modelscope import snapshot_download; snapshot_download('xkzhou/Checkpoint', cache_dir='./models/wav2lip_cache', revision='v1.0.0')\""
+    echo ""
+    echo "  方式2 - HuggingFace:"
     echo "    wget -c https://huggingface.co/Nekochu/Wav2Lip/resolve/main/wav2lip_gan.pth -O models/wav2lip.pth"
     echo ""
-    echo "  方式2 - 从原项目获取:"
+    echo "  方式3 - 从原项目获取:"
     echo "    git clone https://github.com/lipku/LiveTalking.git /tmp/livetalking_ref"
     echo "    cp /tmp/livetalking_ref/models/wav2lip.pth models/"
     echo ""

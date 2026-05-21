@@ -12,13 +12,13 @@ import copy
 #   0.5 = 原始默认（保留下半脸），0.4 = 保留更多上唇区域
 #   降低此值 → 包含更多上唇 → 上唇动作更完整
 #   但太低（<0.3）会导致眼睛区域也被混合，出现闪烁
-UPPER_BOUNDARY_RATIO = 0.4
+UPPER_BOUNDARY_RATIO = 0.5
 
 # 高斯模糊核系数：控制 mask 边缘的平滑度
 #   原始 get_image 用 0.05，get_image_prepare_material 用 0.1
 #   降低 → 边缘更锐利 → 嘴形更明确但可能有接缝
 #   升高 → 边缘更平滑 → 嘴形稍模糊但过渡更自然
-BLUR_KERNEL_RATIO = 0.08
+BLUR_KERNEL_RATIO = 0.05
 
 
 def get_crop_box(box, expand):

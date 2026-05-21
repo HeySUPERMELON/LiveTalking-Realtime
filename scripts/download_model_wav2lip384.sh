@@ -37,18 +37,38 @@ else
   echo "  来源: Wav2Lip GAN 预训练权重（兼容 wav2lip_v2 架构）"
   echo ""
 
-  # 优先从 HuggingFace 下载
+  # 优先从魔搭 (ModelScope) 下载
   DOWNLOADED=false
-  if command -v wget &>/dev/null; then
-    echo "  尝试 wget 下载..."
-    wget -c "https://huggingface.co/Nekochu/Wav2Lip/resolve/main/wav2lip_gan.pth" \
-      -O "$WAV2LIP384_MODEL" 2>&1 && DOWNLOADED=true || true
+  if command -v python3 &>/dev/null || command -v python &>/dev/null; then
+    echo "  尝试从魔搭 (ModelScope) 下载..."
+    PYTHON_CMD=$(command -v python3 || command -v python)
+    $PYTHON_CMD -c "
+import os
+try:
+    from modelscope import snapshot_download
+    model_dir = snapshot_download('xkzhou/Checkpoint', cache_dir='./models/wav2lip_cache', revision='v1.0.0')
+    import shutil
+    for f in os.listdir(model_dir):
+        if f.endswith('.pth'):
+            shutil.copy(os.path.join(model_dir, f), '$WAV2LIP384_MODEL')
+            break
+    print('OK')
+except Exception as e:
+    print(f'FAIL: {e}')
+" 2>&1 | grep -q "OK" && DOWNLOADED=true || true
   fi
 
-  if [ "$DOWNLOADED" = false ] && command -v curl &>/dev/null; then
-    echo "  尝试 curl 下载..."
-    curl -L -C - "https://huggingface.co/Nekochu/Wav2Lip/resolve/main/wav2lip_gan.pth" \
-      -o "$WAV2LIP384_MODEL" 2>&1 && DOWNLOADED=true || true
+  # 方法2: 从 HuggingFace 下载（如果魔搭下载失败）
+  if [ "$DOWNLOADED" = false ]; then
+    if command -v wget &>/dev/null; then
+      wget -c "https://huggingface.co/Nekochu/Wav2Lip/resolve/main/wav2lip_gan.pth" \
+        -O "$WAV2LIP384_MODEL" 2>&1 && DOWNLOADED=true || true
+    fi
+
+    if [ "$DOWNLOADED" = false ] && command -v curl &>/dev/null; then
+      curl -L -C - "https://huggingface.co/Nekochu/Wav2Lip/resolve/main/wav2lip_gan.pth" \
+        -o "$WAV2LIP384_MODEL" 2>&1 && DOWNLOADED=true || true
+    fi
   fi
 
   # 验证下载结果
