@@ -36,7 +36,7 @@ import torch.multiprocessing as mp
 from lipasr import LipASR
 import asyncio
 from av import AudioFrame, VideoFrame
-from wav2lip.models import Wav2Lip
+from wav2lip.models.wav2lip_v2 import Wav2Lip as Wav2Lip
 from basereal import BaseReal
 
 #from imgcache import ImgCache
