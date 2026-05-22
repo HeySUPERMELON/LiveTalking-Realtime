@@ -33,34 +33,37 @@ else
   echo "  来源: LiveTalking 项目预训练权重"
   echo ""
 
-  # 优先从魔搭 (ModelScope) 下载
+  # 从魔搭 (ModelScope) 下载
   DOWNLOADED=false
   if command -v python3 &>/dev/null || command -v python &>/dev/null; then
-    echo "  尝试从魔搭 (ModelScope) 下载..."
+    echo "  尝试从魔搭 (ModelScope) Phoenix505026/wav2lip 下载..."
     PYTHON_CMD=$(command -v python3 || command -v python)
     $PYTHON_CMD -c "
-import os
+import os, shutil
 try:
     from modelscope import snapshot_download
-    model_dir = snapshot_download('xkzhou/Checkpoint', cache_dir='./models/wav2lip_cache', revision='v1.0.0')
-    import shutil
-    for f in os.listdir(model_dir):
-        if f.endswith('.pth'):
-            shutil.copy(os.path.join(model_dir, f), '$WAV2LIP_MODEL')
-            break
-    print('OK')
+    model_dir = snapshot_download('Phoenix505026/wav2lip', cache_dir='./models/wav2lip_cache')
+    # 查找 wav2lip.pth
+    for root, dirs, files in os.walk(model_dir):
+        for f in files:
+            if f.endswith('.pth'):
+                src = os.path.join(root, f)
+                shutil.copy2(src, '$WAV2LIP_MODEL')
+                print(f'OK: {f}')
+                break
 except Exception as e:
     print(f'FAIL: {e}')
-" 2>&1 | grep -q "OK" && DOWNLOADED=true || true
+" 2>&1 | grep -q "^OK" && DOWNLOADED=true || true
   fi
 
-  # 方法2: 从 HuggingFace 下载（如果魔搭下载失败）
+  # 方法2: 从 HuggingFace 的 rudrabha/Wav2Lip 下载（如果魔搭下载失败）
   if [ "$DOWNLOADED" = false ]; then
+    echo "  尝试从 HuggingFace 下载 wav2lip_gan.pth (rudrabha/Wav2Lip)..."
     if command -v wget &>/dev/null; then
-      wget -c "https://huggingface.co/Nekochu/Wav2Lip/resolve/main/wav2lip_gan.pth" \
+      wget -c "https://huggingface.co/rudrabha/wav2lip/resolve/main/wav2lip_gan.pth" \
         -O "$WAV2LIP_MODEL" 2>/dev/null && DOWNLOADED=true || true
     elif command -v curl &>/dev/null; then
-      curl -L -C - "https://huggingface.co/Nekochu/Wav2Lip/resolve/main/wav2lip_gan.pth" \
+      curl -L -C - "https://huggingface.co/rudrabha/wav2lip/resolve/main/wav2lip_gan.pth" \
         -o "$WAV2LIP_MODEL" 2>/dev/null && DOWNLOADED=true || true
     fi
   fi
@@ -70,16 +73,13 @@ except Exception as e:
     echo ""
     echo "⚠ 自动下载失败，请手动下载："
     echo ""
-    echo "  方式1 - 魔搭 (ModelScope):"
+    echo "  方式1 - 魔搭 (ModelScope) [推荐]:"
     echo "    pip install modelscope"
-    echo "    python -c \"from modelscope import snapshot_download; snapshot_download('xkzhou/Checkpoint', cache_dir='./models/wav2lip_cache', revision='v1.0.0')\""
+    echo "    python -c \"from modelscope import snapshot_download; snapshot_download('Phoenix505026/wav2lip', cache_dir='./models/wav2lip_cache')\""
+    echo "    然后将下载的 wav2lip.pth 复制到 models/ 目录"
     echo ""
     echo "  方式2 - HuggingFace:"
-    echo "    wget -c https://huggingface.co/Nekochu/Wav2Lip/resolve/main/wav2lip_gan.pth -O models/wav2lip.pth"
-    echo ""
-    echo "  方式3 - 从原项目获取:"
-    echo "    git clone https://github.com/lipku/LiveTalking.git /tmp/livetalking_ref"
-    echo "    cp /tmp/livetalking_ref/models/wav2lip.pth models/"
+    echo "    wget -c https://huggingface.co/rudrabha/wav2lip/resolve/main/wav2lip_gan.pth -O models/wav2lip.pth"
     echo ""
     echo "  下载后放到: $PROJECT_DIR/models/wav2lip.pth"
     exit 1
